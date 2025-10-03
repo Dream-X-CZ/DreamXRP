@@ -1,5 +1,16 @@
 import { ReactNode } from 'react';
-import { LogOut, FileText, TrendingUp, DollarSign, Users, Briefcase, Home, Settings, CheckSquare } from 'lucide-react';
+import {
+  LogOut,
+  FileText,
+  TrendingUp,
+  DollarSign,
+  Users,
+  Briefcase,
+  Home,
+  Settings,
+  CheckSquare,
+  Calendar as CalendarIcon
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -11,6 +22,7 @@ type ViewName =
   | 'employees'
   | 'projects'
   | 'tasks'
+  | 'calendar'
   | 'team';
 
 interface LayoutProps {
@@ -76,6 +88,12 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               label="Úkoly"
               isActive={currentView === 'tasks'}
               onClick={() => onViewChange('tasks')}
+            />
+            <SidebarButton
+              icon={CalendarIcon}
+              label="Kalendář"
+              isActive={currentView === 'calendar'}
+              onClick={() => onViewChange('calendar')}
             />
             <SidebarButton
               icon={Settings}

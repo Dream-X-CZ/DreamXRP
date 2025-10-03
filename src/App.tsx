@@ -12,6 +12,7 @@ import Dashboard from './components/Dashboard';
 import TeamSettings from './components/TeamSettings';
 import Tasks from './components/Tasks';
 import PendingInvitations from './components/PendingInvitations';
+import Calendar from './components/Calendar';
 import { InvitationWithOrganization } from './types/database';
 
 type View =
@@ -22,6 +23,7 @@ type View =
   | 'employees'
   | 'projects'
   | 'tasks'
+  | 'calendar'
   | 'team';
 
 function App() {
@@ -257,6 +259,8 @@ function App() {
       {currentView === 'projects' && <Projects />}
 
       {currentView === 'tasks' && <Tasks />}
+
+      {currentView === 'calendar' && <Calendar />}
 
       {currentView === 'team' && <TeamSettings />}
     </Layout>
