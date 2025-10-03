@@ -5,6 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Max-Age": "86400"
+
 };
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
@@ -13,6 +14,7 @@ const FROM_EMAIL = Deno.env.get("INVITES_FROM_EMAIL") ?? "DreamXRP <no-reply@dre
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
+
   }
 
   if (req.method !== "POST") {
