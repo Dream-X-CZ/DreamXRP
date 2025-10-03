@@ -9,7 +9,9 @@ import {
   Home,
   Settings,
   CheckSquare,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  UserCircle,
+  UserCog
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -23,7 +25,9 @@ type ViewName =
   | 'projects'
   | 'tasks'
   | 'calendar'
-  | 'team';
+  | 'team'
+  | 'profile'
+  | 'profile-settings';
 
 interface LayoutProps {
   children: ReactNode;
@@ -94,6 +98,18 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               label="Kalendář"
               isActive={currentView === 'calendar'}
               onClick={() => onViewChange('calendar')}
+            />
+            <SidebarButton
+              icon={UserCircle}
+              label="Profil"
+              isActive={currentView === 'profile'}
+              onClick={() => onViewChange('profile')}
+            />
+            <SidebarButton
+              icon={UserCog}
+              label="Nastavení profilu"
+              isActive={currentView === 'profile-settings'}
+              onClick={() => onViewChange('profile-settings')}
             />
             <SidebarButton
               icon={Settings}
