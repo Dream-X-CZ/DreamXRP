@@ -1,12 +1,22 @@
 import { ReactNode } from 'react';
-import { LogOut, FileText, TrendingUp, DollarSign, Users, Briefcase, Home, Settings } from 'lucide-react';
+import { LogOut, FileText, TrendingUp, DollarSign, Users, Briefcase, Home, Settings, CheckSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+type ViewName =
+  | 'dashboard'
+  | 'budgets'
+  | 'expenses'
+  | 'analytics'
+  | 'employees'
+  | 'projects'
+  | 'tasks'
+  | 'team';
+
 interface LayoutProps {
   children: ReactNode;
-  currentView: 'dashboard' | 'budgets' | 'expenses' | 'analytics' | 'employees' | 'projects' | 'team';
-  onViewChange: (view: 'dashboard' | 'budgets' | 'expenses' | 'analytics' | 'employees' | 'projects' | 'team') => void;
+  currentView: ViewName;
+  onViewChange: (view: ViewName) => void;
 }
 
 export default function Layout({ children, currentView, onViewChange }: LayoutProps) {
@@ -60,6 +70,12 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               label="Projekty"
               isActive={currentView === 'projects'}
               onClick={() => onViewChange('projects')}
+            />
+            <SidebarButton
+              icon={CheckSquare}
+              label="Úkoly"
+              isActive={currentView === 'tasks'}
+              onClick={() => onViewChange('tasks')}
             />
             <SidebarButton
               icon={Settings}

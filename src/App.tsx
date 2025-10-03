@@ -10,8 +10,17 @@ import Employees from './components/Employees';
 import Projects from './components/Projects';
 import Dashboard from './components/Dashboard';
 import TeamSettings from './components/TeamSettings';
+import Tasks from './components/Tasks';
 
-type View = 'dashboard' | 'budgets' | 'expenses' | 'analytics' | 'employees' | 'projects' | 'team';
+type View =
+  | 'dashboard'
+  | 'budgets'
+  | 'expenses'
+  | 'analytics'
+  | 'employees'
+  | 'projects'
+  | 'tasks'
+  | 'team';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -137,6 +146,8 @@ function App() {
       {currentView === 'employees' && <Employees />}
 
       {currentView === 'projects' && <Projects />}
+
+      {currentView === 'tasks' && <Tasks />}
 
       {currentView === 'team' && <TeamSettings />}
     </Layout>
