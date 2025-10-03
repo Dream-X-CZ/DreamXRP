@@ -51,7 +51,11 @@ export default function TeamSettings() {
 
       const [orgRes, membersRes, invitationsRes, permissionsRes] = await Promise.all([
         supabase.from('organizations').select('*').eq('id', membership.organization_id).single(),
-        supabase.from('organization_members').select('*').eq('organization_id', membership.organization_id),
+        supabase
+          .from('organization_members')
+          .select('*, profile:profiles(full_name, avatar_url, position, phone)')
+          .eq('organization_id', membership.organization_id)
+          .order('created_at', { ascending: true }),
         supabase
           .from('invitations')
           .select('*')
@@ -341,60 +345,79 @@ export default function TeamSettings() {
           <h3 className="text-lg font-semibold text-[#0a192f]">Členové týmu</h3>
         </div>
         <div className="divide-y divide-gray-200">
-          {members.map((member) => (
-            <div key={member.id} className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                    <span className="text-gray-600 font-medium">
-                      {member.user?.email?.charAt(0).toUpperCase() || '?'}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-medium text-gray-900">{member.user?.email || 'Neznámý uživatel'}</div>
-                    <div className="text-sm text-gray-500">Přidán {new Date(member.created_at).toLocaleDateString('cs-CZ')}</div>
-                  </div>
-                </div>
+          {members.map(member => {
+            const displayName = member.profile?.full_name || member.profile?.position || 'Neznámý člen';
+            const avatarLetter = displayName.charAt(0).toUpperCase();
 
-                <div className="flex items-center gap-3">
-                  {member.role !== 'owner' ? (
-                    <select
-                      value={member.role}
-                      onChange={(e) => handleUpdateRole(member.id, e.target.value)}
-                      className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    >
-                      <option value="viewer">Pozorovatel</option>
-                      <option value="member">Člen</option>
-                      <option value="admin">Administrátor</option>
-                    </select>
-                  ) : (
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getRoleBadgeColor(member.role)}`}>
-                      {getRoleText(member.role)}
-                    </span>
-                  )}
+            return (
+              <div key={member.id} className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
+                      {member.profile?.avatar_url ? (
+                        <img
+                          src={member.profile.avatar_url}
+                          alt={displayName}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-gray-600 font-medium">{avatarLetter || '?'}</span>
+                      )}
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900">{displayName}</div>
+                      {member.profile?.position && (
+                        <div className="text-sm text-gray-500">{member.profile.position}</div>
+                      )}
+                      <div className="text-sm text-gray-500">
+                        Přidán {new Date(member.created_at).toLocaleDateString('cs-CZ')}
+                      </div>
+                      {member.profile?.phone && (
+                        <div className="text-sm text-gray-400">{member.profile.phone}</div>
+                      )}
+                    </div>
+                  </div>
 
-                  {member.role !== 'owner' && (
-                    <>
-                      <button
-                        onClick={() => handleOpenPermissions(member)}
-                        className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition"
-                        title="Upravit oprávnění"
+                  <div className="flex items-center gap-3">
+                    {member.role !== 'owner' ? (
+                      <select
+                        value={member.role}
+                        onChange={e => handleUpdateRole(member.id, e.target.value)}
+                        className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
                       >
-                        <Shield className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleRemoveMember(member.id)}
-                        className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
-                        title="Odebrat člena"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </>
-                  )}
+                        <option value="viewer">Pozorovatel</option>
+                        <option value="member">Člen</option>
+                        <option value="admin">Administrátor</option>
+                      </select>
+                    ) : (
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getRoleBadgeColor(member.role)}`}>
+                        {getRoleText(member.role)}
+                      </span>
+                    )}
+
+                    {member.role !== 'owner' && (
+                      <>
+                        <button
+                          onClick={() => handleOpenPermissions(member)}
+                          className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition"
+                          title="Upravit oprávnění"
+                        >
+                          <Shield className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleRemoveMember(member.id)}
+                          className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
+                          title="Odebrat člena"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -403,7 +426,7 @@ export default function TeamSettings() {
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-[#0a192f]">
-                Oprávnění pro {selectedMember.user?.email}
+                Oprávnění pro {selectedMember.profile?.full_name || 'člena týmu'}
               </h3>
             </div>
 

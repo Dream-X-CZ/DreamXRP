@@ -56,6 +56,17 @@ export interface Expense {
   created_at: string;
 }
 
+export interface Profile {
+  id: string;
+  full_name?: string | null;
+  phone?: string | null;
+  position?: string | null;
+  bio?: string | null;
+  avatar_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Employee {
   id: string;
   user_id: string;
@@ -102,9 +113,7 @@ export interface OrganizationMember {
   user_id: string;
   role: 'owner' | 'admin' | 'member' | 'viewer';
   created_at: string;
-  user?: {
-    email: string;
-  };
+  profile?: Profile | null;
 }
 
 export interface Invitation {
