@@ -87,13 +87,16 @@ function App() {
   };
 
   const initializeDefaultCategories = async (userId: string) => {
-    const { data: memberData } = await supabase
+    const { data: memberships, error: membershipError } = await supabase
       .from('organization_members')
       .select('organization_id')
-      .eq('user_id', userId)
-      .maybeSingle();
+      .eq('user_id', userId);
 
-    if (!memberData) {
+    if (membershipError) {
+      console.error('Error checking organization memberships:', membershipError);
+    }
+
+    if (!memberships || memberships.length === 0) {
       const { data: newOrg, error: orgError } = await supabase
         .from('organizations')
         .insert({ name: 'Moje organizace', owner_id: userId })
