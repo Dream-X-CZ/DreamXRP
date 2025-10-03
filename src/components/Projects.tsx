@@ -15,11 +15,15 @@ import {
   BarChart3,
   Target,
   Info,
-  NotebookPen
+  NotebookPen,
+  Search
+
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Project, Budget } from '../types/database';
 import ProjectDetails from './ProjectDetails';
+
+type StatusFilter = 'all' | Project['status'];
 
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -30,6 +34,9 @@ export default function Projects() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [stepErrors, setStepErrors] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
 
   const [formData, setFormData] = useState({
     name: '',
@@ -280,6 +287,77 @@ export default function Projects() {
     [projects]
   );
 
+  const planningProjects = useMemo(
+    () => projects.filter((project) => project.status === 'planning').length,
+    [projects]
+  );
+
+  const overspentProjects = useMemo(
+    () => projects.filter((project) => project.total_budget > 0 && project.spent_amount > project.total_budget).length,
+    [projects]
+  );
+
+  const upcomingProjects = useMemo(() => {
+    const now = new Date();
+    const nextMonth = new Date();
+    nextMonth.setDate(now.getDate() + 30);
+
+    return projects.filter((project) => {
+      if (!project.start_date) return false;
+      const start = new Date(project.start_date);
+      return start >= now && start <= nextMonth;
+    }).length;
+  }, [projects]);
+
+  const statusCounts = useMemo(
+    () =>
+      projects.reduce(
+        (acc, project) => ({
+          ...acc,
+          [project.status]: (acc[project.status] || 0) + 1
+        }),
+        { planning: 0, active: 0, completed: 0, 'on-hold': 0, cancelled: 0 } as Record<Project['status'], number>
+      ),
+    [projects]
+  );
+
+  const filterOptions = useMemo(
+    () => [
+      { value: 'all' as StatusFilter, label: 'Vše' },
+      { value: 'planning' as StatusFilter, label: 'Plánování' },
+      { value: 'active' as StatusFilter, label: 'Aktivní' },
+      { value: 'completed' as StatusFilter, label: 'Dokončeno' },
+      { value: 'on-hold' as StatusFilter, label: 'Pozastaveno' },
+      { value: 'cancelled' as StatusFilter, label: 'Zrušeno' }
+    ],
+    []
+  );
+
+  const budgetsById = useMemo(() => {
+    const map = new Map<string, Budget>();
+    budgets.forEach((budget) => map.set(budget.id, budget));
+    return map;
+  }, [budgets]);
+
+  const filteredProjects = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLocaleLowerCase('cs-CZ');
+
+    return projects.filter((project) => {
+      const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
+      if (!matchesStatus) return false;
+
+      if (!normalizedSearch) return true;
+
+      const budgetName = project.budget_id ? budgetsById.get(project.budget_id)?.name ?? '' : '';
+      const haystack = `${project.name} ${project.description || ''} ${budgetName}`.toLocaleLowerCase('cs-CZ');
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [projects, statusFilter, searchTerm, budgetsById]);
+
+  const hasActiveFilters = statusFilter !== 'all' || searchTerm.trim() !== '';
+
+
   const formProgress = useMemo(
     () => ((currentStep + 1) / steps.length) * 100,
     [currentStep, steps.length]
@@ -295,11 +373,12 @@ export default function Projects() {
 
   return (
     <div>
-      <div className="flex flex-col gap-6 mb-6">
+      <div className="mb-8 flex flex-col gap-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-[#0a192f] uppercase tracking-wide text-xs font-semibold">
-              <Sparkles className="w-4 h-4" />
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#0a192f]">
+              <Sparkles className="h-4 w-4" />
+
               Váš projekťák
             </div>
             <h2 className="text-3xl font-bold text-[#0a192f]">Řízení projektů</h2>
@@ -311,7 +390,7 @@ export default function Projects() {
             onClick={openForm}
             className="flex items-center justify-center gap-2 self-start rounded-xl bg-[#0a192f] px-6 py-3 text-white shadow-lg shadow-[#0a192f]/20 transition hover:-translate-y-0.5 hover:bg-[#0c2548]"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="h-5 w-5" />
             <span>{editingProject ? 'Pokračovat v úpravách' : 'Postavit nový projekt'}</span>
           </button>
         </div>
@@ -354,6 +433,114 @@ export default function Projects() {
             <p className="text-xs text-gray-500">Kontrolujte rozpočty včas</p>
           </div>
         </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-4 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Riziko překročení
+              <AlertCircle className="h-4 w-4" />
+            </div>
+            <p className="mt-2 text-2xl font-semibold text-amber-700">{overspentProjects}</p>
+            <p className="text-xs text-amber-700/80">Projekt{overspentProjects === 1 ? '' : 'ů'} má vyšší čerpání než rozpočet</p>
+          </div>
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-4 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-blue-700">
+              Startuje brzy
+              <Calendar className="h-4 w-4" />
+            </div>
+            <p className="mt-2 text-2xl font-semibold text-blue-700">{upcomingProjects}</p>
+            <p className="text-xs text-blue-700/80">Projekty začínající do 30 dnů</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+              V přípravě
+              <NotebookPen className="h-4 w-4 text-[#0a192f]" />
+            </div>
+            <p className="mt-2 text-2xl font-semibold text-[#0a192f]">{planningProjects}</p>
+            <p className="text-xs text-gray-500">Čekají na rozpracování detailů</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white/70 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Hledat podle názvu, popisu nebo rozpočtu"
+                className="w-full rounded-xl border border-gray-200 bg-white px-10 py-2.5 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {filterOptions.map((option) => {
+                const isActive = statusFilter === option.value;
+                const count = option.value === 'all' ? projects.length : statusCounts[option.value as Project['status']];
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setStatusFilter(option.value)}
+                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+                      isActive
+                        ? 'bg-[#0a192f] text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{option.label}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        isActive ? 'bg-white/20' : 'bg-white text-gray-600'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span>Zobrazeno {filteredProjects.length} z {projects.length} projektů</span>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('all');
+                }}
+                className="inline-flex items-center gap-1 font-semibold text-[#0a192f] hover:underline"
+              >
+                Vyčistit filtry
+              </button>
+            )}
+          </div>
+        </div>
+
+        {overspentProjects > 0 && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5" />
+              <div>
+                <p className="font-semibold">Pozor na čerpání</p>
+                <p>
+                  {overspentProjects === 1
+                    ? '1 projekt je momentálně nad plánovaným rozpočtem.'
+                    : `${overspentProjects} projektů je momentálně nad plánovaným rozpočtem.`}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('active')}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-amber-700 shadow-sm transition hover:bg-amber-100"
+            >
+              Zaměřit se na aktivní projekty
+            </button>
+          </div>
+        )}
       </div>
 
       {showForm && (
@@ -677,6 +864,7 @@ export default function Projects() {
                 </div>
               </div>
 
+
               <div className="rounded-3xl border border-gray-100 bg-white/70 p-6 shadow-sm">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
@@ -697,14 +885,10 @@ export default function Projects() {
       )}
 
       {projects.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <TrendingUp className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            Zatím nemáte žádné projekty
-          </h3>
-          <p className="text-gray-600 mb-6">
-            Vytvořte svůj první projekt a začněte plánovat
-          </p>
+        <div className="rounded-3xl bg-white p-12 text-center shadow">
+          <TrendingUp className="mx-auto mb-4 h-16 w-16 text-gray-300" />
+          <h3 className="mb-2 text-lg font-medium text-gray-900">Zatím nemáte žádné projekty</h3>
+          <p className="mb-6 text-gray-600">Vytvořte svůj první projekt a začněte plánovat.</p>
           <button
             onClick={openForm}
             className="inline-flex items-center gap-2 rounded-xl bg-[#0a192f] px-6 py-3 text-white shadow-lg shadow-[#0a192f]/20 transition hover:-translate-y-0.5 hover:bg-[#0c2548]"
@@ -713,99 +897,124 @@ export default function Projects() {
             Vytvořit projekt
           </button>
         </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-gray-200 bg-white/70 p-10 text-center shadow-sm">
+          <h3 className="text-lg font-semibold text-[#0a192f]">Nic neodpovídá zvolenému filtru</h3>
+          <p className="mt-2 text-sm text-gray-600">Zkuste upravit hledaný text nebo vyberte jiný status.</p>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setStatusFilter('all');
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-[#0a192f]/20 px-5 py-2 text-sm font-medium text-[#0a192f] transition hover:border-[#0a192f]"
+            >
+              Vyčistit filtry
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="grid gap-6">
-          {projects.map((project) => {
+          {filteredProjects.map((project) => {
             const progress = calculateProgress(project);
             const remaining = project.total_budget - project.spent_amount;
+            const linkedBudget = project.budget_id ? budgetsById.get(project.budget_id) : undefined;
+            const isOverBudget = project.total_budget > 0 && project.spent_amount > project.total_budget;
 
             return (
-              <div key={project.id} className="bg-white rounded-lg shadow hover:shadow-md transition p-6">
-                <div className="flex justify-between items-start mb-4">
+              <div key={project.id} className="rounded-3xl bg-white p-6 shadow transition hover:shadow-lg">
+                <div className="mb-4 flex items-start justify-between gap-4">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-[#0a192f] mb-2">
-                      {project.name}
-                    </h3>
+                    <h3 className="mb-2 text-xl font-semibold text-[#0a192f]">{project.name}</h3>
+                    {linkedBudget && (
+                      <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                        <NotebookPen className="h-4 w-4" />
+                        <span>{linkedBudget.name}</span>
+                        {linkedBudget.client_name && <span className="text-blue-400">• {linkedBudget.client_name}</span>}
+                      </div>
+                    )}
                     {project.description && (
-                      <p className="text-gray-600 mb-3">{project.description}</p>
+                      <p className="text-sm text-gray-600">{project.description}</p>
                     )}
                   </div>
-
                   <div className="flex items-center gap-2">
-                    <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(project.status)}`}>
+                    <span className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${getStatusColor(project.status)}`}>
                       {getStatusIcon(project.status)}
                       {getStatusText(project.status)}
                     </span>
                     <button
                       onClick={() => setSelectedProject(project)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                      className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50"
                       title="Spravovat tým a úkoly"
                     >
-                      <Users className="w-5 h-5" />
+                      <Users className="h-5 w-5" />
                     </button>
                     <button
                       onClick={() => handleEdit(project)}
-                      className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                      className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100"
                     >
-                      <Edit className="w-5 h-5" />
+                      <Edit className="h-5 w-5" />
                     </button>
                     <button
                       onClick={() => handleDelete(project.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      className="rounded-lg p-2 text-red-600 transition hover:bg-red-50"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Trash2 className="h-5 w-5" />
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="h-4 w-4" />
                     <span>
                       {project.start_date ? new Date(project.start_date).toLocaleDateString('cs-CZ') : 'N/A'}
                       {' → '}
                       {project.end_date ? new Date(project.end_date).toLocaleDateString('cs-CZ') : 'N/A'}
                     </span>
                   </div>
-
-                  <div className="text-sm">
-                    <span className="text-gray-600">Rozpočet: </span>
-                    <span className="font-semibold text-[#0a192f]">
-                      {project.total_budget.toLocaleString('cs-CZ')} Kč
-                    </span>
+                  <div className="text-sm text-gray-600">
+                    Rozpočet: <span className="font-semibold text-[#0a192f]">{project.total_budget.toLocaleString('cs-CZ')} Kč</span>
                   </div>
-
-                  <div className="text-sm">
-                    <span className="text-gray-600">Vyčerpáno: </span>
-                    <span className="font-semibold text-[#0a192f]">
-                      {project.spent_amount.toLocaleString('cs-CZ')} Kč
-                    </span>
+                  <div className="text-sm text-gray-600">
+                    Vyčerpáno: <span className="font-semibold text-[#0a192f]">{project.spent_amount.toLocaleString('cs-CZ')} Kč</span>
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    <span className="rounded-full bg-gray-100 px-3 py-1 font-medium text-gray-600">
+                      {progress.toFixed(0)} % rozpočtu čerpáno
+                    </span>
+                    {isOverBudget && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 font-medium text-red-700">
+                        <AlertCircle className="h-3 w-3" /> Překračujete limit
+                      </span>
+                    )}
+                  </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Průběh projektu</span>
                     <span className="font-medium text-[#0a192f]">{progress.toFixed(1)}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="h-2 w-full rounded-full bg-gray-200">
                     <div
                       className={`h-2 rounded-full transition-all ${
-                        progress >= 100 ? 'bg-red-500' : progress >= 75 ? 'bg-yellow-500' : 'bg-green-500'
+                        isOverBudget ? 'bg-red-500' : progress >= 75 ? 'bg-amber-500' : 'bg-green-500'
                       }`}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Zbývá:</span>
-                    <span className={`font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    <span className="text-gray-600">{remaining < 0 ? 'Překročeno:' : 'Zbývá:'}</span>
+                    <span className={`font-semibold ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
                       {remaining.toLocaleString('cs-CZ')} Kč
                     </span>
                   </div>
                 </div>
 
                 {project.notes && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="mt-4 border-t border-gray-200 pt-4">
                     <p className="text-sm text-gray-600">{project.notes}</p>
                   </div>
                 )}
