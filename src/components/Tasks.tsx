@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import {
   Plus,
   Search,
@@ -13,6 +14,7 @@ import {
   Trash2,
   BarChart3,
   X
+
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Task, Project, Employee } from '../types/database';
@@ -131,6 +133,7 @@ export default function Tasks() {
     setShowForm(false);
     resetForm();
   }, [resetForm]);
+
 
   const handleCreateNew = () => {
     resetForm();
@@ -252,6 +255,7 @@ export default function Tasks() {
 
       await loadData();
       handleCloseForm();
+
     } catch (err: any) {
       console.error('Error saving task:', err);
       setError('Úkol se nepodařilo uložit. Zkontrolujte prosím zadané údaje.');
@@ -286,6 +290,7 @@ export default function Tasks() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showForm, handleCloseForm]);
+
 
   const projectMap = useMemo(() => {
     const map = new Map<string, Project>();
@@ -481,6 +486,7 @@ export default function Tasks() {
           </div>
       )
       }
+
 
         {loading ? (
           <div className="text-center py-16 text-slate-500">Načítání úkolů...</div>
@@ -771,6 +777,7 @@ export default function Tasks() {
           </section>
         </div>
         ) : null}
+
     </div>
   );
 }
