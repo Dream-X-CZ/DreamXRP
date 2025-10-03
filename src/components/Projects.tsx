@@ -17,6 +17,7 @@ import {
   Info,
   NotebookPen,
   Search
+
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Project, Budget } from '../types/database';
@@ -35,6 +36,7 @@ export default function Projects() {
   const [stepErrors, setStepErrors] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
 
   const [formData, setFormData] = useState({
     name: '',
@@ -355,6 +357,7 @@ export default function Projects() {
 
   const hasActiveFilters = statusFilter !== 'all' || searchTerm.trim() !== '';
 
+
   const formProgress = useMemo(
     () => ((currentStep + 1) / steps.length) * 100,
     [currentStep, steps.length]
@@ -375,6 +378,7 @@ export default function Projects() {
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#0a192f]">
               <Sparkles className="h-4 w-4" />
+
               Váš projekťák
             </div>
             <h2 className="text-3xl font-bold text-[#0a192f]">Řízení projektů</h2>
@@ -859,6 +863,7 @@ export default function Projects() {
                   )}
                 </div>
               </div>
+
 
               <div className="rounded-3xl border border-gray-100 bg-white/70 p-6 shadow-sm">
                 <div className="flex items-start gap-3">
