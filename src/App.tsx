@@ -11,6 +11,8 @@ import Projects from './components/Projects';
 import Dashboard from './components/Dashboard';
 import TeamSettings from './components/TeamSettings';
 import Tasks from './components/Tasks';
+import PendingInvitations from './components/PendingInvitations';
+import { InvitationWithOrganization } from './types/database';
 
 type View =
   | 'dashboard'
@@ -28,13 +30,12 @@ function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [isCreatingBudget, setIsCreatingBudget] = useState(false);
+  const [pendingInvitations, setPendingInvitations] = useState<InvitationWithOrganization[]>([]);
+  const [processingInviteId, setProcessingInviteId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-        initializeDefaultCategories(session.user.id);
-      }
       setLoading(false);
     });
 
@@ -42,13 +43,48 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) {
-        initializeDefaultCategories(session.user.id);
-      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (session?.user) {
+      loadPendingInvitations(session.user);
+    } else {
+      setPendingInvitations([]);
+    }
+  }, [session]);
+
+  const loadPendingInvitations = async (user: any) => {
+    if (!user?.email) {
+      if (user?.id) {
+        await initializeDefaultCategories(user.id);
+      }
+      return;
+    }
+
+    try {
+      const email = (user.email as string).toLowerCase();
+      const { data, error } = await supabase
+        .from('invitations')
+        .select('*, organization:organizations(*)')
+        .ilike('email', email)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      const invitations = (data as InvitationWithOrganization[] | null) ?? [];
+      setPendingInvitations(invitations);
+
+      if (invitations.length === 0) {
+        await initializeDefaultCategories(user.id);
+      }
+    } catch (error) {
+      console.error('Error loading invitations:', error);
+      await initializeDefaultCategories(user.id);
+    }
+  };
 
   const initializeDefaultCategories = async (userId: string) => {
     const { data: memberData } = await supabase
@@ -93,6 +129,65 @@ function App() {
     }
   };
 
+  const handleAcceptInvitation = async (invitationId: string) => {
+    if (!session?.user) return;
+
+    const invitation = pendingInvitations.find(inv => inv.id === invitationId);
+    if (!invitation) return;
+
+    try {
+      setProcessingInviteId(invitationId);
+
+      await supabase.from('organization_members').insert({
+        organization_id: invitation.organization_id,
+        user_id: session.user.id,
+        role: invitation.role
+      });
+
+      await supabase
+        .from('invitations')
+        .update({ status: 'accepted' })
+        .eq('id', invitationId);
+
+      const remainingInvites = pendingInvitations.filter(inv => inv.id !== invitationId);
+      setPendingInvitations(remainingInvites);
+
+      if (remainingInvites.length === 0) {
+        await initializeDefaultCategories(session.user.id);
+      }
+    } catch (error) {
+      console.error('Error accepting invitation:', error);
+      alert('Nepodařilo se přijmout pozvánku. Zkuste to prosím znovu.');
+    } finally {
+      setProcessingInviteId(null);
+    }
+  };
+
+  const handleDeclineInvitation = async (invitationId: string) => {
+    if (!session?.user) return;
+
+    try {
+      setProcessingInviteId(invitationId);
+
+      await supabase
+        .from('invitations')
+        .update({ status: 'declined' })
+        .eq('id', invitationId);
+
+      const remainingInvites = pendingInvitations.filter(inv => inv.id !== invitationId);
+      setPendingInvitations(remainingInvites);
+
+      if (remainingInvites.length === 0) {
+        await initializeDefaultCategories(session.user.id);
+      }
+    } catch (error) {
+      console.error('Error declining invitation:', error);
+      alert('Nepodařilo se odmítnout pozvánku. Zkuste to prosím znovu.');
+    } finally {
+      setProcessingInviteId(null);
+    }
+  };
+
   const handleCreateBudget = () => {
     setIsCreatingBudget(true);
     setEditingBudgetId(null);
@@ -125,6 +220,17 @@ function App() {
 
   if (!session) {
     return <AuthForm onSuccess={() => setSession(true)} />;
+  }
+
+  if (pendingInvitations.length > 0) {
+    return (
+      <PendingInvitations
+        invitations={pendingInvitations}
+        onAccept={handleAcceptInvitation}
+        onDecline={handleDeclineInvitation}
+        processingId={processingInviteId}
+      />
+    );
   }
 
   return (
