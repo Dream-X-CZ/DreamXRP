@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { LogOut, FileText, TrendingUp, DollarSign, Users, Briefcase, Home, Settings } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface LayoutProps {
@@ -16,97 +17,94 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-[#0a192f] text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-bold">Správa rozpočtů</h1>
-
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => onViewChange('dashboard')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'dashboard' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <Home className="w-5 h-5" />
-                <span>Dashboard</span>
-              </button>
-
-              <button
-                onClick={() => onViewChange('budgets')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'budgets' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <FileText className="w-5 h-5" />
-                <span>Rozpočty</span>
-              </button>
-
-              <button
-                onClick={() => onViewChange('expenses')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'expenses' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <DollarSign className="w-5 h-5" />
-                <span>Náklady</span>
-              </button>
-
-              <button
-                onClick={() => onViewChange('analytics')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'analytics' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <TrendingUp className="w-5 h-5" />
-                <span>Analytika</span>
-              </button>
-
-              <button
-                onClick={() => onViewChange('employees')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'employees' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <Users className="w-5 h-5" />
-                <span>Zaměstnanci</span>
-              </button>
-
-              <button
-                onClick={() => onViewChange('projects')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'projects' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <Briefcase className="w-5 h-5" />
-                <span>Projekty</span>
-              </button>
-
-              <button
-                onClick={() => onViewChange('team')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                  currentView === 'team' ? 'bg-white text-[#0a192f]' : 'hover:bg-white/10'
-                }`}
-              >
-                <Settings className="w-5 h-5" />
-                <span>Tým</span>
-              </button>
-
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition"
-              >
-                <LogOut className="w-5 h-5" />
-                <span>Odhlásit</span>
-              </button>
-            </div>
+      <div className="flex min-h-screen">
+        <aside className="w-64 bg-[#0a192f] text-white shadow-lg flex flex-col">
+          <div className="px-6 py-6 border-b border-white/10">
+            <h1 className="text-2xl font-bold">Správa rozpočtů</h1>
+            <p className="text-white/60 text-sm mt-1">Řízení projektů a nákladů</p>
           </div>
-        </div>
-      </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+          <nav className="flex-1 px-4 py-6 space-y-1">
+            <SidebarButton
+              icon={Home}
+              label="Dashboard"
+              isActive={currentView === 'dashboard'}
+              onClick={() => onViewChange('dashboard')}
+            />
+            <SidebarButton
+              icon={FileText}
+              label="Rozpočty"
+              isActive={currentView === 'budgets'}
+              onClick={() => onViewChange('budgets')}
+            />
+            <SidebarButton
+              icon={DollarSign}
+              label="Náklady"
+              isActive={currentView === 'expenses'}
+              onClick={() => onViewChange('expenses')}
+            />
+            <SidebarButton
+              icon={TrendingUp}
+              label="Analytika"
+              isActive={currentView === 'analytics'}
+              onClick={() => onViewChange('analytics')}
+            />
+            <SidebarButton
+              icon={Users}
+              label="Zaměstnanci"
+              isActive={currentView === 'employees'}
+              onClick={() => onViewChange('employees')}
+            />
+            <SidebarButton
+              icon={Briefcase}
+              label="Projekty"
+              isActive={currentView === 'projects'}
+              onClick={() => onViewChange('projects')}
+            />
+            <SidebarButton
+              icon={Settings}
+              label="Tým"
+              isActive={currentView === 'team'}
+              onClick={() => onViewChange('team')}
+            />
+          </nav>
+
+          <div className="px-4 py-6 border-t border-white/10">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white/10 hover:bg-white/20 transition"
+            >
+              <LogOut className="w-5 h-5" />
+              <span>Odhlásit</span>
+            </button>
+          </div>
+        </aside>
+
+        <main className="flex-1 px-6 lg:px-10 py-8">
+          <div className="max-w-6xl mx-auto">{children}</div>
+        </main>
+      </div>
     </div>
+  );
+}
+
+interface SidebarButtonProps {
+  icon: LucideIcon;
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+function SidebarButton({ icon: Icon, label, isActive, onClick }: SidebarButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition text-left ${
+        isActive ? 'bg-white text-[#0a192f] shadow-lg' : 'hover:bg-white/10'
+      }`}
+    >
+      <Icon className="w-5 h-5" />
+      <span className="font-medium">{label}</span>
+    </button>
   );
 }
