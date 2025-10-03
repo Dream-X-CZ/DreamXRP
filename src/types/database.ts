@@ -119,6 +119,10 @@ export interface Invitation {
   created_at: string;
 }
 
+export interface InvitationWithOrganization extends Invitation {
+  organization?: Organization | null;
+}
+
 export interface ResourcePermission {
   id: string;
   organization_id: string;
