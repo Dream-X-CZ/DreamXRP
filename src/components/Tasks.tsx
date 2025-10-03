@@ -19,6 +19,8 @@ import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
 
 import type { Task, Project, Employee } from '../types/database';
+import Dropdown, { type DropdownOption } from './ui/Dropdown';
+import TimePicker from './ui/TimePicker';
 
 
 type StatusFilter = 'all' | Task['status'];
@@ -36,6 +38,7 @@ type TaskFormState = {
   estimated_hours: string;
   actual_hours: string;
   deadline: string;
+  deadlineTime: string;
 };
 
 const statusLabels: Record<Task['status'], string> = {
@@ -66,6 +69,16 @@ const priorityColors: Record<Task['priority'], string> = {
   urgent: 'bg-red-100 text-red-700'
 };
 
+const statusDropdownOptions: DropdownOption[] = Object.entries(statusLabels).map(([value, label]) => ({
+  value,
+  label
+}));
+
+const priorityDropdownOptions: DropdownOption[] = Object.entries(priorityLabels).map(([value, label]) => ({
+  value,
+  label
+}));
+
 const initialFormState: TaskFormState = {
   title: '',
   description: '',
@@ -75,7 +88,8 @@ const initialFormState: TaskFormState = {
   priority: 'medium',
   estimated_hours: '0',
   actual_hours: '0',
-  deadline: ''
+  deadline: '',
+  deadlineTime: ''
 };
 
 export default function Tasks() {
@@ -165,6 +179,21 @@ export default function Tasks() {
   const handleEdit = (task: Task) => {
     setEditingTask(task);
     setShowForm(true);
+    let deadlineDate = '';
+    let deadlineTime = '';
+
+    if (task.deadline) {
+      const [datePart, timePartRaw] = task.deadline.split('T');
+      deadlineDate = datePart ?? '';
+
+      if (timePartRaw) {
+        const timePart = timePartRaw.split(/[+-]/)[0];
+        if (timePart) {
+          deadlineTime = timePart.slice(0, 5);
+        }
+      }
+    }
+
     setFormData({
       title: task.title,
       description: task.description || '',
@@ -174,7 +203,8 @@ export default function Tasks() {
       priority: task.priority,
       estimated_hours: String(Number(task.estimated_hours || 0)),
       actual_hours: String(Number(task.actual_hours || 0)),
-      deadline: task.deadline ? task.deadline.slice(0, 10) : ''
+      deadline: deadlineDate,
+      deadlineTime
     });
   };
 
@@ -270,6 +300,12 @@ export default function Tasks() {
       }
 
 
+      const deadlineValue = formData.deadline
+        ? formData.deadlineTime
+          ? `${formData.deadline}T${formData.deadlineTime}:00`
+          : formData.deadline
+        : null;
+
       const payload = {
         title: formData.title.trim(),
         description: formData.description.trim() || null,
@@ -279,7 +315,7 @@ export default function Tasks() {
         priority: formData.priority,
         estimated_hours: Number(formData.estimated_hours) || 0,
         actual_hours: Number(formData.actual_hours) || 0,
-        deadline: formData.deadline || null
+        deadline: deadlineValue
       };
 
       if (!payload.title) {
@@ -428,6 +464,27 @@ export default function Tasks() {
       .filter((employee): employee is Employee => Boolean(employee));
   }, [tasks, employeeMap]);
 
+  const projectOptions = useMemo<DropdownOption[]>(
+    () => projects.map(project => ({ value: project.id, label: project.name })),
+    [projects]
+  );
+
+  const assigneeOptions = useMemo<DropdownOption[]>(() => {
+    const base: DropdownOption[] = [
+      { value: '', label: 'Nepřiřazeno' }
+    ];
+
+    employees.forEach(employee => {
+      const fullName = `${employee.first_name ?? ''} ${employee.last_name ?? ''}`.trim();
+      base.push({
+        value: employee.id,
+        label: fullName || employee.first_name || 'Bez jména'
+      });
+    });
+
+    return base;
+  }, [employees]);
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -556,15 +613,23 @@ export default function Tasks() {
             {filteredTasks.map(task => {
               const project = projectMap.get(task.project_id);
               const assignee = task.assigned_to ? employeeMap.get(task.assigned_to) : undefined;
-              const deadlineLabel = task.deadline
-                ? new Date(task.deadline).toLocaleDateString('cs-CZ')
+              const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+              const hasSpecificTime = task.deadline ? task.deadline.includes('T') : false;
+              const dateLabel = deadlineDate?.toLocaleDateString('cs-CZ');
+              const timeLabel = deadlineDate && hasSpecificTime
+                ? deadlineDate.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })
+                : null;
+              const deadlineLabel = deadlineDate
+                ? timeLabel
+                  ? `${dateLabel} ${timeLabel}`
+                  : dateLabel ?? 'Bez termínu'
                 : 'Bez termínu';
 
-              const isOverdue = task.deadline
+              const isOverdue = deadlineDate
                 ? (() => {
-                    const deadlineDate = new Date(task.deadline);
-                    deadlineDate.setHours(0, 0, 0, 0);
-                    return deadlineDate < today && task.status !== 'completed' && task.status !== 'cancelled';
+                    const normalized = new Date(deadlineDate);
+                    normalized.setHours(0, 0, 0, 0);
+                    return normalized < today && task.status !== 'completed' && task.status !== 'cancelled';
                   })()
                 : false;
 
@@ -620,18 +685,16 @@ export default function Tasks() {
                     </div>
 
                     <div className="flex flex-col gap-2 min-w-[180px]">
-                      <label className="text-xs uppercase tracking-wide text-slate-500">Změna stavu</label>
-                      <select
+                      <span className="text-xs uppercase tracking-wide text-slate-500 font-medium">Změna stavu</span>
+                      <Dropdown
+                        className="w-full"
                         value={task.status}
-                        onChange={event => handleStatusChange(task, event.target.value as Task['status'])}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20 text-sm"
-                      >
-                        {Object.entries(statusLabels).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={nextValue => handleStatusChange(task, nextValue as Task['status'])}
+                        options={statusDropdownOptions}
+                        placeholder="Vyberte stav"
+                        size="sm"
+                        variant="soft"
+                      />
 
                       <div className="flex gap-2">
                         <button
@@ -699,80 +762,78 @@ export default function Tasks() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Projekt *</label>
-                  <select
-                    value={formData.project_id}
-                    onChange={event => setFormData(prev => ({ ...prev, project_id: event.target.value }))}
-                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                    required
-                  >
-                    <option value="">Vyberte projekt</option>
-                    {projects.map(project => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Dropdown
+                  label="Projekt *"
+                  value={formData.project_id}
+                  onChange={nextValue => setFormData(prev => ({ ...prev, project_id: nextValue }))}
+                  options={projectOptions}
+                  placeholder="Vyberte projekt"
+                  className="w-full"
+                />
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Přiřazeno</label>
-                  <select
-                    value={formData.assigned_to}
-                    onChange={event => setFormData(prev => ({ ...prev, assigned_to: event.target.value }))}
-                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                  >
-                    <option value="">Nepřiřazeno</option>
-                    {employees.map(employee => (
-                      <option key={employee.id} value={employee.id}>
-                        {`${employee.first_name} ${employee.last_name}`.trim() || employee.first_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Dropdown
+                  label="Přiřazeno"
+                  value={formData.assigned_to}
+                  onChange={nextValue => setFormData(prev => ({ ...prev, assigned_to: nextValue }))}
+                  options={assigneeOptions}
+                  placeholder="Vyberte člena týmu"
+                  className="w-full"
+                />
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Termín dokončení</label>
-                  <input
-                    type="date"
-                    value={formData.deadline}
-                    onChange={event => setFormData(prev => ({ ...prev, deadline: event.target.value }))}
-                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="date"
+                      value={formData.deadline}
+                      onChange={event => {
+                        const nextDate = event.target.value;
+                        setFormData(prev => ({
+                          ...prev,
+                          deadline: nextDate,
+                          deadlineTime: nextDate ? prev.deadlineTime : ''
+                        }));
+                      }}
+                      className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                    />
+                    <TimePicker
+                      value={formData.deadlineTime}
+                      onChange={nextValue =>
+                        setFormData(prev => ({
+                          ...prev,
+                          deadlineTime: nextValue
+                        }))
+                      }
+                      placeholder="Vyberte čas"
+                      className="sm:col-span-1"
+                      helperText="Volitelné"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Stav</label>
-                  <select
-                    value={formData.status}
-                    onChange={event => setFormData(prev => ({ ...prev, status: event.target.value as Task['status'] }))}
-                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                  >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Dropdown
+                  label="Stav"
+                  value={formData.status}
+                  onChange={nextValue =>
+                    setFormData(prev => ({ ...prev, status: nextValue as Task['status'] }))
+                  }
+                  options={statusDropdownOptions}
+                  placeholder="Vyberte stav"
+                  className="w-full"
+                />
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Priorita</label>
-                  <select
-                    value={formData.priority}
-                    onChange={event => setFormData(prev => ({ ...prev, priority: event.target.value as Task['priority'] }))}
-                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                  >
-                    {Object.entries(priorityLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Dropdown
+                  label="Priorita"
+                  value={formData.priority}
+                  onChange={nextValue =>
+                    setFormData(prev => ({ ...prev, priority: nextValue as Task['priority'] }))
+                  }
+                  options={priorityDropdownOptions}
+                  placeholder="Vyberte prioritu"
+                  className="w-full"
+                />
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Odhadovaný čas (h)</label>
@@ -861,7 +922,7 @@ interface FilterSelectProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  options: DropdownOption[];
 }
 
 function FilterSelect({ icon: Icon, label, value, onChange, options }: FilterSelectProps) {
@@ -870,17 +931,16 @@ function FilterSelect({ icon: Icon, label, value, onChange, options }: FilterSel
       <Icon className="w-5 h-5 text-slate-500" />
       <div className="flex-1">
         <p className="text-xs uppercase text-slate-500 font-medium mb-1">{label}</p>
-        <select
+        <Dropdown
+          className="w-full"
           value={value}
-          onChange={event => onChange(event.target.value)}
-          className="w-full bg-transparent text-slate-700 font-medium outline-none"
-        >
-          {options.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={nextValue => onChange(nextValue)}
+          options={options}
+          placeholder="Vyberte možnost"
+          size="sm"
+          variant="ghost"
+          buttonClassName="bg-transparent px-0 py-0 pr-6 text-sm font-medium text-slate-700 border-transparent shadow-none focus:ring-0 focus:border-transparent"
+        />
       </div>
     </div>
   );
