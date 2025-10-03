@@ -161,3 +161,17 @@ export interface Task {
   created_at: string;
   updated_at: string;
 }
+
+export interface CalendarEvent {
+  id: string;
+  organization_id: string;
+  title: string;
+  description?: string | null;
+  start_at: string;
+  end_at: string;
+  type: string;
+  task_id?: string | null;
+  task?: (Task & { project?: Project | null }) | null;
+  created_at: string;
+  updated_at: string;
+}
