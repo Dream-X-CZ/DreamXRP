@@ -89,6 +89,29 @@ export default function TeamSettings() {
 
       if (error) throw error;
 
+      try {
+        const inviteLink = `${window.location.origin}/accept-invite?token=${invitationPayload.token}`;
+        const { error: emailError } = await supabase.functions.invoke('send-invite-email', {
+          body: {
+            email: inviteForm.email,
+            organizationName: organization.name,
+            role: inviteForm.role,
+            invitedByEmail: user.email,
+            inviteLink
+          }
+        });
+
+        if (emailError) {
+          console.error('Error sending invitation email via function:', emailError);
+          alert('Pozvánka byla uložena, ale e-mail se nepodařilo odeslat.');
+          return;
+        }
+      } catch (emailError) {
+        console.error('Error invoking invitation email function:', emailError);
+        alert('Pozvánka byla uložena, ale e-mail se nepodařilo odeslat.');
+        return;
+      }
+
       alert('Pozvánka byla odeslána!');
       setInviteForm({ email: '', role: 'member' });
       setShowInviteForm(false);
