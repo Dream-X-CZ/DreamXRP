@@ -39,6 +39,18 @@ export default function Projects() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
+  useEffect(() => {
+    if (showForm) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showForm]);
+
 
   const [formData, setFormData] = useState({
     name: '',
@@ -570,14 +582,21 @@ export default function Projects() {
       </div>
 
       {showForm && (
-        <div className="relative overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-gray-100">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#0a192f]/5 via-transparent to-transparent" />
-          <div className="relative grid gap-8 p-8 lg:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-wide text-[#0a192f]">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={resetForm}
+        >
+          <div
+            className="relative w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-gray-100"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-[#0a192f]/5 via-transparent to-transparent" />
+            <div className="relative grid gap-8 p-8 lg:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-wide text-[#0a192f]">
                       {editingProject ? 'Úprava projektu' : 'Kreator projektu'}
                     </p>
                     <h3 className="text-2xl font-bold text-[#0a192f]">
@@ -906,6 +925,7 @@ export default function Projects() {
                 </div>
               </div>
             </aside>
+            </div>
           </div>
         </div>
       )}
