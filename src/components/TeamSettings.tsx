@@ -66,16 +66,26 @@ export default function TeamSettings() {
 
     if (!organization) return;
 
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase.from('invitations').insert({
+      const invitationPayload = {
         organization_id: organization.id,
         email: inviteForm.email,
         role: inviteForm.role,
-        invited_by: user.id
-      });
+        invited_by: user.id,
+        status: 'pending' as const,
+        token: crypto.randomUUID(),
+        expires_at: expiresAt.toISOString()
+      };
+
+      const { error } = await supabase
+        .from('invitations')
+        .insert(invitationPayload);
 
       if (error) throw error;
 
