@@ -13,6 +13,8 @@ import TeamSettings from './components/TeamSettings';
 import Tasks from './components/Tasks';
 import PendingInvitations from './components/PendingInvitations';
 import Calendar from './components/Calendar';
+import Profile from './components/Profile';
+import ProfileSettings from './components/ProfileSettings';
 import { InvitationWithOrganization } from './types/database';
 
 type View =
@@ -24,7 +26,9 @@ type View =
   | 'projects'
   | 'tasks'
   | 'calendar'
-  | 'team';
+  | 'team'
+  | 'profile'
+  | 'profile-settings';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -263,6 +267,10 @@ function App() {
       {currentView === 'calendar' && <Calendar />}
 
       {currentView === 'team' && <TeamSettings />}
+
+      {currentView === 'profile' && <Profile />}
+
+      {currentView === 'profile-settings' && <ProfileSettings />}
     </Layout>
   );
 }
