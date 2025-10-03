@@ -1,5 +1,19 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Trash2, Save, Download } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Plus,
+  Trash2,
+  Save,
+  Sparkles,
+  Wallet,
+  PiggyBank,
+  Layers,
+  BarChart3,
+  Target,
+  FileSpreadsheet,
+  Info
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Budget, BudgetItem, Category } from '../types/database';
 import * as XLSX from 'xlsx';
@@ -13,20 +27,49 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
   const [budget, setBudget] = useState<Partial<Budget>>({
     name: '',
     client_name: '',
-    status: 'draft',
+    status: 'draft'
   });
   const [items, setItems] = useState<Partial<BudgetItem>[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [stepErrors, setStepErrors] = useState<string[]>([]);
+
+  const statusOptions: { value: Budget['status']; label: string; hint: string }[] = [
+    { value: 'draft', label: 'Koncept', hint: 'Pracovní verze pro interní ladění' },
+    { value: 'sent', label: 'Odesláno', hint: 'Posláno klientovi ke schválení' },
+    { value: 'approved', label: 'Schváleno', hint: 'Klient odsouhlasil nabídku' },
+    { value: 'rejected', label: 'Zamítnuto', hint: 'Vyžaduje úpravy nebo revizi' }
+  ];
+
+  const createEmptyItem = (orderIndex: number): Partial<BudgetItem> => ({
+    item_name: '',
+    unit: 'ks',
+    quantity: 1,
+    price_per_unit: 0,
+    total_price: 0,
+    notes: '',
+    internal_price_per_unit: 0,
+    internal_quantity: 1,
+    internal_total_price: 0,
+    profit: 0,
+    order_index: orderIndex
+  });
 
   useEffect(() => {
     loadCategories();
+  }, []);
+
+  useEffect(() => {
     if (budgetId) {
       loadBudget();
     } else {
-      addNewItem();
+      setBudget({ name: '', client_name: '', status: 'draft' });
+      setItems([createEmptyItem(0)]);
     }
+    setCurrentStep(0);
+    setStepErrors([]);
   }, [budgetId]);
 
   const loadCategories = async () => {
@@ -52,7 +95,11 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
         .order('order_index');
 
       if (budgetData) setBudget(budgetData);
-      if (itemsData) setItems(itemsData);
+      if (itemsData && itemsData.length > 0) {
+        setItems(itemsData);
+      } else {
+        setItems([createEmptyItem(0)]);
+      }
     } catch (error) {
       console.error('Error loading budget:', error);
     } finally {
@@ -61,68 +108,48 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
   };
 
   const addNewItem = () => {
-    setItems([
-      ...items,
-      {
-        item_name: '',
-        unit: 'ks',
-        quantity: 1,
-        price_per_unit: 0,
-        total_price: 0,
-        notes: '',
-        internal_price_per_unit: 0,
-        internal_quantity: 1,
-        internal_total_price: 0,
-        profit: 0,
-        order_index: items.length,
-      },
-    ]);
+    setItems((prev) => [...prev, createEmptyItem(prev.length)]);
   };
 
   const updateItem = (index: number, field: string, value: any) => {
-    const newItems = [...items];
-    const item = { ...newItems[index], [field]: value };
+    setItems((prev) => {
+      const newItems = [...prev];
+      const item = { ...newItems[index], [field]: value };
 
-    if (field === 'quantity' || field === 'price_per_unit') {
-      item.total_price = (item.quantity || 0) * (item.price_per_unit || 0);
+      const quantity = Number(item.quantity) || 0;
+      const pricePerUnit = Number(item.price_per_unit) || 0;
+      item.total_price = quantity * pricePerUnit;
+
       if (field === 'quantity') {
         item.internal_quantity = value;
       }
-    }
 
-    if (field === 'internal_quantity' || field === 'internal_price_per_unit') {
-      item.internal_total_price = (item.internal_quantity || 0) * (item.internal_price_per_unit || 0);
-    }
+      const internalQuantity = Number(item.internal_quantity) || 0;
+      const internalPrice = Number(item.internal_price_per_unit) || 0;
+      item.internal_total_price = internalQuantity * internalPrice;
 
-    item.profit = (item.total_price || 0) - (item.internal_total_price || 0);
+      item.profit = (item.total_price || 0) - (item.internal_total_price || 0);
 
-    newItems[index] = item;
-    setItems(newItems);
+      newItems[index] = item;
+      return newItems;
+    });
   };
 
   const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    setItems((prev) =>
+      prev
+        .filter((_, i) => i !== index)
+        .map((item, orderIndex) => ({ ...item, order_index: orderIndex }))
+    );
   };
 
   const saveBudget = async () => {
-    if (!budget.name || !budget.client_name) {
-      alert('Vyplňte prosím název zakázky a klienta');
-      return;
-    }
-
-    const invalidItems = items.filter(
-      item => !item.category_id || !item.item_name
-    );
-
-    if (invalidItems.length > 0) {
-      alert('Všechny položky musí mít vybranou kategorii a název');
-      return;
-    }
-
     setSaving(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
       let currentBudgetId = budgetId;
@@ -132,7 +159,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
           .from('budgets')
           .insert({
             ...budget,
-            user_id: user.id,
+            user_id: user.id
           })
           .select()
           .single();
@@ -144,7 +171,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
           .from('budgets')
           .update({
             ...budget,
-            updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           })
           .eq('id', budgetId);
 
@@ -157,7 +184,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
         const itemsToInsert = items.map((item, index) => ({
           ...item,
           budget_id: currentBudgetId,
-          order_index: index,
+          order_index: index
         }));
 
         const { error: itemsError } = await supabase
@@ -166,12 +193,12 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
 
         if (itemsError) throw itemsError;
 
-        const negativeItems = items.filter(item => (item.price_per_unit || 0) < 0);
+        const negativeItems = items.filter((item) => (item.price_per_unit || 0) < 0);
 
         if (negativeItems.length > 0 && categories.length > 0) {
-          const expensesToCreate = negativeItems.map(item => ({
+          const expensesToCreate = negativeItems.map((item) => ({
             name: item.item_name || 'Náklad z rozpočtu',
-            amount: Math.abs((item.total_price || 0)),
+            amount: Math.abs(item.total_price || 0),
             date: new Date().toISOString().split('T')[0],
             category_id: item.category_id,
             budget_id: currentBudgetId,
@@ -193,9 +220,11 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
       }
 
       onBack();
+      return true;
     } catch (error) {
       console.error('Error saving budget:', error);
       alert('Chyba při ukládání rozpočtu');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -210,7 +239,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
       ['Klient', budget.client_name || '', '', 'E-mail', budget.client_email || '', '', 'Projektový manažer', budget.project_manager || ''],
       ['Projekt', budget.name || '', '', 'Datum zahájení', new Date().toLocaleDateString('cs-CZ'), '', 'E-mail', budget.manager_email || ''],
       ['Typ projektu', '', '', 'Datum ukončení', '', '', '', ''],
-      [],
+      []
     ];
 
     worksheetData.push([]);
@@ -220,7 +249,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
     worksheetData.push(headers);
 
     items.forEach((item) => {
-      const category = categories.find(c => c.id === item.category_id);
+      const category = categories.find((c) => c.id === item.category_id);
       const row = [
         category?.name || '',
         item.item_name || '',
@@ -229,7 +258,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
         `${(item.price_per_unit || 0).toFixed(2)} Kč`,
         `${(item.total_price || 0).toFixed(2)} Kč`,
         '',
-        item.notes || '',
+        item.notes || ''
       ];
 
       worksheetData.push(row);
@@ -301,14 +330,141 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
     XLSX.writeFile(workbook, fileName);
   };
 
-  const totals = items.reduce(
-    (acc, item) => ({
-      clientTotal: acc.clientTotal + (item.total_price || 0),
-      internalTotal: acc.internalTotal + (item.internal_total_price || 0),
-      profit: acc.profit + (item.profit || 0),
-    }),
-    { clientTotal: 0, internalTotal: 0, profit: 0 }
+  const totals = useMemo(
+    () =>
+      items.reduce(
+        (acc, item) => ({
+          clientTotal: acc.clientTotal + (item.total_price || 0),
+          internalTotal: acc.internalTotal + (item.internal_total_price || 0),
+          profit: acc.profit + (item.profit || 0)
+        }),
+        { clientTotal: 0, internalTotal: 0, profit: 0 }
+      ),
+    [items]
   );
+
+  const steps = useMemo(
+    () => [
+      {
+        title: 'Základní údaje',
+        description: 'Ujasněte si zadání, kontakty a stav rozpočtu.'
+      },
+      {
+        title: 'Ceník & položky',
+        description: 'Rozepište jednotlivé položky a interní náklady.'
+      },
+      {
+        title: 'Souhrn a výstupy',
+        description: 'Zkontrolujte čísla a připravte exporty pro klienta.'
+      }
+    ],
+    []
+  );
+
+  const validateStep = (stepIndex: number) => {
+    const errors: string[] = [];
+
+    if (stepIndex === 0) {
+      if (!budget.name?.trim()) {
+        errors.push('Vyplňte název zakázky.');
+      }
+      if (!budget.client_name?.trim()) {
+        errors.push('Zadejte jméno klienta.');
+      }
+    }
+
+    if (stepIndex === 1) {
+      if (items.length === 0) {
+        errors.push('Přidejte alespoň jednu položku rozpočtu.');
+      }
+
+      const missingCategory = items.some((item) => !item.category_id);
+      if (missingCategory) {
+        errors.push('Každá položka musí mít přiřazenou kategorii.');
+      }
+
+      const missingName = items.some((item) => !item.item_name?.trim());
+      if (missingName) {
+        errors.push('Položky musí mít název, aby se daly rozpoznat.');
+      }
+
+      const invalidQuantity = items.some((item) => (item.quantity || 0) <= 0);
+      if (invalidQuantity) {
+        errors.push('Množství jednotlivých položek musí být větší než nula.');
+      }
+    }
+
+    return errors;
+  };
+  const handleNextStep = () => {
+    const errors = validateStep(currentStep);
+    setStepErrors(errors);
+
+    if (errors.length === 0) {
+      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+    }
+  };
+
+  const handlePreviousStep = () => {
+    setStepErrors([]);
+    setCurrentStep((prev) => Math.max(prev - 1, 0));
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (currentStep < steps.length - 1) {
+      handleNextStep();
+      return;
+    }
+
+    const errors = validateStep(currentStep);
+    if (errors.length > 0) {
+      setStepErrors(errors);
+      return;
+    }
+
+    setStepErrors([]);
+    await saveBudget();
+  };
+
+  const formProgress = useMemo(
+    () => ((currentStep + 1) / steps.length) * 100,
+    [currentStep, steps.length]
+  );
+
+  const averageItemValue = useMemo(
+    () => (items.length > 0 ? totals.clientTotal / items.length : 0),
+    [items.length, totals.clientTotal]
+  );
+
+  const marginPercentage = useMemo(
+    () => (totals.clientTotal > 0 ? (totals.profit / totals.clientTotal) * 100 : 0),
+    [totals.clientTotal, totals.profit]
+  );
+
+  const projectedVatTotal = useMemo(
+    () => totals.clientTotal * 1.21,
+    [totals.clientTotal]
+  );
+
+  const categoryBreakdown = useMemo(() => {
+    const map = new Map<string, { name: string; total: number }>();
+
+    items.forEach((item) => {
+      if (!item.category_id) return;
+      const category = categories.find((cat) => cat.id === item.category_id);
+      if (!category) return;
+
+      const existing = map.get(category.id);
+      const total = (item.total_price || 0) + (existing?.total || 0);
+      map.set(category.id, { name: category.name, total });
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3);
+  }, [items, categories]);
 
   if (loading) {
     return (
@@ -319,328 +475,676 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-[#0a192f] transition"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Zpět</span>
-        </button>
+    <div className="space-y-8">
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 transition hover:text-[#0a192f]"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        <span>Zpět do přehledu rozpočtů</span>
+      </button>
 
-        <div className="flex gap-3">
-          {budgetId && (
-            <>
-              <button
-                onClick={() => exportToExcel(false)}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition"
-              >
-                <Download className="w-5 h-5" />
-                <span>Excel pro klienta</span>
-              </button>
-              <button
-                onClick={() => exportToExcel(true)}
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition"
-              >
-                <Download className="w-5 h-5" />
-                <span>Excel kompletní</span>
-              </button>
-            </>
-          )}
-          <button
-            onClick={saveBudget}
-            disabled={saving}
-            className="flex items-center gap-2 bg-[#0a192f] text-white px-6 py-3 rounded-lg hover:bg-opacity-90 transition disabled:opacity-50"
-          >
-            <Save className="w-5 h-5" />
-            <span>{saving ? 'Ukládám...' : 'Uložit'}</span>
-          </button>
-        </div>
-      </div>
+      <div className="relative overflow-hidden rounded-3xl border border-[#0a192f]/10 bg-gradient-to-br from-[#0a192f] via-[#132c4d] to-[#1f4c7f] text-white shadow-xl">
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{ backgroundImage: 'radial-gradient(circle at top, rgba(255,255,255,0.8), transparent 60%)' }}
+        />
+        <div className="relative p-8 lg:p-10">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-xl space-y-4">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide">
+                <Sparkles className="h-4 w-4" />
+                Kreativní rozpočtář
+              </span>
+              <div className="space-y-3">
+                <h1 className="text-3xl font-bold leading-tight md:text-4xl">
+                  Vytvořte nabídku, která klienta nadchne
+                </h1>
+                <p className="text-sm text-slate-200 md:text-base">
+                  Projděte tři rychlé kroky – od základních údajů přes položky až po finální souhrn. V reálném čase uvidíte marži, top kategorie i připravené exporty.
+                </p>
+              </div>
+            </div>
 
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 className="text-xl font-bold text-[#0a192f] mb-6">
-          {budgetId ? 'Upravit rozpočet' : 'Nový rozpočet'}
-        </h2>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Název zakázky
-            </label>
-            <input
-              type="text"
-              value={budget.name || ''}
-              onChange={(e) => setBudget({ ...budget, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-              placeholder="Např. Rekonstrukce koupelny"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Klient
-            </label>
-            <input
-              type="text"
-              value={budget.client_name || ''}
-              onChange={(e) => setBudget({ ...budget, client_name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-              placeholder="Jméno klienta"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              E-mail klienta
-            </label>
-            <input
-              type="email"
-              value={budget.client_email || ''}
-              onChange={(e) => setBudget({ ...budget, client_email: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-              placeholder="klient@email.cz"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Kontaktní osoba
-            </label>
-            <input
-              type="text"
-              value={budget.contact_person || ''}
-              onChange={(e) => setBudget({ ...budget, contact_person: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-              placeholder="Jméno kontaktní osoby"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Projektový manažer
-            </label>
-            <input
-              type="text"
-              value={budget.project_manager || ''}
-              onChange={(e) => setBudget({ ...budget, project_manager: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-              placeholder="Jméno manažera"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              E-mail manažera
-            </label>
-            <input
-              type="email"
-              value={budget.manager_email || ''}
-              onChange={(e) => setBudget({ ...budget, manager_email: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-              placeholder="manazer@vas-email.cz"
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
+                  Celkem pro klienta
+                  <Wallet className="h-4 w-4 text-white" />
+                </div>
+                <p className="mt-3 text-2xl font-semibold">
+                  {totals.clientTotal.toLocaleString('cs-CZ')} Kč
+                </p>
+                <p className="text-xs text-slate-200/80">bez DPH</p>
+              </div>
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
+                  Odhadovaný zisk
+                  <PiggyBank className="h-4 w-4 text-white" />
+                </div>
+                <p className="mt-3 text-2xl font-semibold">
+                  {totals.profit.toLocaleString('cs-CZ')} Kč
+                </p>
+                <p className="text-xs text-slate-200/80">{marginPercentage.toFixed(1)} % marže</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-[#0a192f]">Položky rozpočtu</h3>
-          <button
-            onClick={addNewItem}
-            className="flex items-center gap-2 text-[#0a192f] hover:bg-gray-100 px-4 py-2 rounded-lg transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Přidat položku</span>
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {items.map((item, index) => (
-            <div key={index} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex justify-between items-start mb-4">
-                <h4 className="font-medium text-[#0a192f]">Položka {index + 1}</h4>
-                <button
-                  onClick={() => removeItem(index)}
-                  className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
+        <div className="space-y-6">
+          <div className="relative overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-gray-100">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#0a192f]/5 via-transparent to-transparent" />
+            <div className="relative space-y-8 p-6 sm:p-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#0a192f]/80">
+                    {budgetId ? 'Úprava rozpočtu' : 'Nový rozpočet'}
+                  </p>
+                  <h2 className="text-2xl font-bold text-[#0a192f] md:text-3xl">
+                    {steps[currentStep].title}
+                  </h2>
+                  <p className="text-sm text-gray-600 md:text-base">{steps[currentStep].description}</p>
+                </div>
+                <div className="hidden sm:flex items-center gap-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  {steps.map((step, index) => (
+                    <div key={step.title} className="flex items-center gap-3">
+                      <span
+                        className={`flex h-8 w-8 items-center justify-center rounded-full border text-sm transition ${
+                          index === currentStep
+                            ? 'border-[#0a192f] bg-[#0a192f] text-white'
+                            : index < currentStep
+                              ? 'border-emerald-400 bg-emerald-400 text-white'
+                              : 'border-gray-200 bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      {index < steps.length - 1 && <div className="h-px w-10 bg-gray-200" />}
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-6 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Kategorie
-                    </label>
-                    <select
-                      value={item.category_id || ''}
-                      onChange={(e) => updateItem(index, 'category_id', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    >
-                      <option value="">Vyberte...</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-gray-500 sm:hidden">
+                  {steps.map((step, index) => (
+                    <div key={step.title} className="flex flex-1 items-center gap-3">
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-full border text-sm ${
+                          index === currentStep
+                            ? 'border-[#0a192f] bg-[#0a192f] text-white'
+                            : index < currentStep
+                              ? 'border-emerald-400 bg-emerald-400 text-white'
+                              : 'border-gray-200 bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        {index + 1}
+                      </div>
+                      {index < steps.length - 1 && <div className="h-px flex-1 bg-gray-200" />}
+                    </div>
+                  ))}
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    className="h-full rounded-full bg-[#0a192f] transition-all"
+                    style={{ width: `${formProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {stepErrors.length > 0 && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  <div className="mb-2 flex items-center gap-2 font-semibold">
+                    <Info className="h-4 w-4" />
+                    Ještě dolaďte následující kroky
+                  </div>
+                  <ul className="list-disc space-y-1 pl-5">
+                    {stepErrors.map((error) => (
+                      <li key={error}>{error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-8">
+                {currentStep === 0 && (
+                  <div className="space-y-6">
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Název zakázky *</label>
+                        <input
+                          type="text"
+                          value={budget.name || ''}
+                          onChange={(e) => setBudget({ ...budget, name: e.target.value })}
+                          placeholder="Např. Interiérový redesign kanceláří"
+                          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Klient *</label>
+                        <input
+                          type="text"
+                          value={budget.client_name || ''}
+                          onChange={(e) => setBudget({ ...budget, client_name: e.target.value })}
+                          placeholder="Jméno firmy nebo klienta"
+                          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">E-mail klienta</label>
+                        <input
+                          type="email"
+                          value={budget.client_email || ''}
+                          onChange={(e) => setBudget({ ...budget, client_email: e.target.value })}
+                          placeholder="klient@email.cz"
+                          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Kontaktní osoba</label>
+                        <input
+                          type="text"
+                          value={budget.contact_person || ''}
+                          onChange={(e) => setBudget({ ...budget, contact_person: e.target.value })}
+                          placeholder="Kdo bude nabídku řešit"
+                          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Projektový manažer</label>
+                        <input
+                          type="text"
+                          value={budget.project_manager || ''}
+                          onChange={(e) => setBudget({ ...budget, project_manager: e.target.value })}
+                          placeholder="Kdo za tým drží projekt"
+                          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">E-mail manažera</label>
+                        <input
+                          type="email"
+                          value={budget.manager_email || ''}
+                          onChange={(e) => setBudget({ ...budget, manager_email: e.target.value })}
+                          placeholder="manazer@firma.cz"
+                          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-700">Stav rozpočtu</p>
+                          <p className="text-xs text-gray-500">Označte, v jaké fázi schvalování se nabídka nachází.</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {statusOptions.map((option) => {
+                          const isActive = budget.status === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setBudget({ ...budget, status: option.value })}
+                              className={`rounded-xl border px-4 py-3 text-left text-sm transition ${
+                                isActive
+                                  ? 'border-[#0a192f] bg-white text-[#0a192f] shadow-sm'
+                                  : 'border-transparent bg-white/60 text-gray-600 hover:border-[#0a192f]/40 hover:bg-white'
+                              }`}
+                            >
+                              <div className="font-semibold">{option.label}</div>
+                              <div className="text-xs text-gray-500">{option.hint}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {currentStep === 1 && (
+                  <div className="space-y-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-[#0a192f]">Položky rozpočtu</h3>
+                        <p className="text-sm text-gray-500">Rozepište jednotlivé položky tak, jak je uvidí klient i vaše interní náklady.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addNewItem}
+                        className="inline-flex items-center gap-2 rounded-xl border border-[#0a192f]/20 bg-white px-4 py-2 text-sm font-medium text-[#0a192f] shadow-sm transition hover:-translate-y-0.5 hover:border-[#0a192f]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Přidat položku
+                      </button>
+                    </div>
+
+                    <div className="space-y-5">
+                      {items.map((item, index) => (
+                        <div
+                          key={index}
+                          className="rounded-2xl border border-gray-200 bg-white/90 p-5 shadow-sm transition hover:shadow-md"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0a192f]/10 text-sm font-semibold text-[#0a192f]">
+                                {index + 1}
+                              </span>
+                              <div>
+                                <p className="text-base font-semibold text-[#0a192f]">
+                                  {item.item_name || `Položka ${index + 1}`}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {item.notes ? 'Poznámky přidány' : 'Přidejte krátké vysvětlení pro klienta'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-600">
+                                {(item.total_price || 0).toLocaleString('cs-CZ')} Kč
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeItem(index)}
+                                className="rounded-lg p-2 text-red-500 transition hover:bg-red-50"
+                                aria-label={`Smazat položku ${index + 1}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 grid gap-5 lg:grid-cols-12">
+                            <div className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 lg:col-span-5">
+                              <div className="space-y-2">
+                                <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Kategorie</label>
+                                <select
+                                  value={item.category_id || ''}
+                                  onChange={(e) => updateItem(index, 'category_id', e.target.value)}
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                >
+                                  <option value="">Vyberte kategorii…</option>
+                                  {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.id}>
+                                      {cat.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Název položky</label>
+                                <input
+                                  type="text"
+                                  value={item.item_name || ''}
+                                  onChange={(e) => updateItem(index, 'item_name', e.target.value)}
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Jednotka</label>
+                                <input
+                                  type="text"
+                                  value={item.unit || ''}
+                                  onChange={(e) => updateItem(index, 'unit', e.target.value)}
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Poznámka</label>
+                                <textarea
+                                  value={item.notes || ''}
+                                  onChange={(e) => updateItem(index, 'notes', e.target.value)}
+                                  rows={3}
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-4 lg:col-span-7">
+                              <div className="rounded-2xl border border-gray-100 bg-slate-50/70 p-4">
+                                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                  Částka pro klienta
+                                  <Wallet className="h-4 w-4 text-[#0a192f]" />
+                                </div>
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <label className="text-xs text-gray-500">Počet</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.quantity || 0}
+                                      onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-xs text-gray-500">Cena za jednotku</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.price_per_unit || 0}
+                                      onChange={(e) => updateItem(index, 'price_per_unit', parseFloat(e.target.value) || 0)}
+                                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                  <label className="text-xs text-gray-500">Celkem bez DPH</label>
+                                  <input
+                                    type="number"
+                                    value={(item.total_price || 0).toFixed(2)}
+                                    readOnly
+                                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-[#0a192f]"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+                                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                                  Interní kalkulace
+                                  <PiggyBank className="h-4 w-4" />
+                                </div>
+                                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                  <div className="space-y-2">
+                                    <label className="text-xs text-emerald-600">Kč / jednotka</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.internal_price_per_unit || 0}
+                                      onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
+                                      className="w-full rounded-xl border border-emerald-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-xs text-emerald-600">Počet</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.internal_quantity || 0}
+                                      onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
+                                      className="w-full rounded-xl border border-emerald-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-xs text-emerald-600">Náklad celkem</label>
+                                    <input
+                                      type="number"
+                                      value={(item.internal_total_price || 0).toFixed(2)}
+                                      readOnly
+                                      className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-700"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between rounded-xl bg-white/60 px-3 py-2 text-sm font-semibold text-emerald-700">
+                                  <span>Odhadovaný zisk</span>
+                                  <span>{(item.profit || 0).toFixed(2)} Kč</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                    </select>
+                    </div>
                   </div>
+                )}
 
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Název položky
-                    </label>
-                    <input
-                      type="text"
-                      value={item.item_name || ''}
-                      onChange={(e) => updateItem(index, 'item_name', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    />
+                {currentStep === 2 && (
+                  <div className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Celkem pro klienta
+                          <Wallet className="h-4 w-4 text-[#0a192f]" />
+                        </div>
+                        <p className="mt-3 text-2xl font-semibold text-[#0a192f]">
+                          {totals.clientTotal.toLocaleString('cs-CZ')} Kč
+                        </p>
+                        <p className="text-xs text-gray-500">bez DPH</p>
+                      </div>
+                      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Interní náklady
+                          <PiggyBank className="h-4 w-4 text-[#0a192f]" />
+                        </div>
+                        <p className="mt-3 text-2xl font-semibold text-[#0a192f]">
+                          {totals.internalTotal.toLocaleString('cs-CZ')} Kč
+                        </p>
+                        <p className="text-xs text-gray-500">včetně interních zdrojů</p>
+                      </div>
+                      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Marže
+                          <Target className="h-4 w-4 text-[#0a192f]" />
+                        </div>
+                        <p className="mt-3 text-2xl font-semibold text-[#0a192f]">
+                          {totals.profit.toLocaleString('cs-CZ')} Kč
+                        </p>
+                        <p className="text-xs text-gray-500">{marginPercentage.toFixed(1)} % z nabídky</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 lg:grid-cols-2">
+                      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
+                            <FileSpreadsheet className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-[#0a192f]">Podklady pro klienta</p>
+                            <p className="text-xs text-gray-500">Předpokládaná částka s 21 % DPH a rychlý přehled.</p>
+                          </div>
+                        </div>
+                        <div className="mt-4 rounded-2xl bg-gray-50 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">S DPH</div>
+                          <div className="text-2xl font-bold text-[#0a192f]">
+                            {projectedVatTotal.toLocaleString('cs-CZ')} Kč
+                          </div>
+                          <p className="text-xs text-gray-500">včetně 21 % DPH</p>
+                        </div>
+                        <ul className="mt-4 space-y-2 text-sm text-gray-600">
+                          <li>• Přidejte krycí dopis s přehledem klíčových bodů.</li>
+                          <li>• Zkontrolujte, zda souhlasí kontaktní osoby a e-maily.</li>
+                          <li>• Přiložte případné reference nebo moodboard.</li>
+                        </ul>
+                      </div>
+
+                      <div className="rounded-2xl border border-dashed border-[#0a192f]/30 bg-[#0a192f]/5 p-6 shadow-inner">
+                        <div className="flex items-start gap-3">
+                          <Sparkles className="h-5 w-5 text-[#0a192f]" />
+                          <div className="space-y-2">
+                            <p className="text-sm font-semibold text-[#0a192f]">Nezapomeňte na další kroky</p>
+                            <p className="text-sm text-[#0a192f]/80">
+                              Po uložení můžete rovnou odeslat klientovi nebo sdílet v týmu. Exporty jsou dostupné po uložení rozpočtu.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl bg-white/80 p-3 text-sm text-gray-600 shadow-sm">
+                            <p className="font-semibold text-[#0a192f]">Položek</p>
+                            <p>{items.length}</p>
+                          </div>
+                          <div className="rounded-xl bg-white/80 p-3 text-sm text-gray-600 shadow-sm">
+                            <p className="font-semibold text-[#0a192f]">Průměrná položka</p>
+                            <p>{averageItemValue.toLocaleString('cs-CZ')} Kč</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+                )}
 
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Jednotka
-                    </label>
-                    <input
-                      type="text"
-                      value={item.unit || ''}
-                      onChange={(e) => updateItem(index, 'unit', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    />
+                <div className="flex flex-col gap-3 border-t border-gray-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm text-gray-500">
+                    {currentStep === 0 && 'Krok 1 ze 3 – základní informace o zakázce'}
+                    {currentStep === 1 && 'Krok 2 ze 3 – rozepište položky a náklady'}
+                    {currentStep === 2 && 'Poslední krok – uložte a vyexportujte rozpočet'}
                   </div>
+                  <div className="flex flex-wrap gap-3">
+                    {currentStep > 0 && (
+                      <button
+                        type="button"
+                        onClick={handlePreviousStep}
+                        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        Zpět
+                      </button>
+                    )}
 
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Počet
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.quantity || ''}
-                      onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    />
-                  </div>
+                    {currentStep === steps.length - 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => exportToExcel(false)}
+                          disabled={!budgetId}
+                          className={`inline-flex items-center gap-2 rounded-xl border border-[#0a192f]/20 px-4 py-2 text-sm font-medium transition ${
+                            budgetId
+                              ? 'bg-white text-[#0a192f] hover:border-[#0a192f] hover:bg-white shadow-sm'
+                              : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          <FileSpreadsheet className="h-4 w-4" />
+                          Excel pro klienta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => exportToExcel(true)}
+                          disabled={!budgetId}
+                          className={`inline-flex items-center gap-2 rounded-xl border border-[#0a192f]/20 px-4 py-2 text-sm font-medium transition ${
+                            budgetId
+                              ? 'bg-white text-[#0a192f] hover:border-[#0a192f] hover:bg-white shadow-sm'
+                              : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          <FileSpreadsheet className="h-4 w-4" />
+                          Excel interní
+                        </button>
+                      </>
+                    )}
 
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Kč/jednotka
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.price_per_unit || ''}
-                      onChange={(e) => updateItem(index, 'price_per_unit', parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    />
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#0a192f] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#0a192f]/20 transition hover:-translate-y-0.5 hover:bg-[#0c2548] disabled:opacity-60"
+                      disabled={saving}
+                    >
+                      {currentStep === steps.length - 1 ? (
+                        <>
+                          <Save className="h-4 w-4" />
+                          {saving ? 'Ukládám…' : budgetId ? 'Aktualizovat rozpočet' : 'Dokončit rozpočet'}
+                        </>
+                      ) : (
+                        <>
+                          Pokračovat
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
+              </form>
+            </div>
+          </div>
+        </div>
 
-                <div className="grid grid-cols-6 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Celkem bez DPH
-                    </label>
-                    <input
-                      type="number"
-                      value={item.total_price?.toFixed(2) || '0.00'}
-                      readOnly
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50"
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Poznámka
-                    </label>
-                    <input
-                      type="text"
-                      value={item.notes || ''}
-                      onChange={(e) => updateItem(index, 'notes', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                    />
-                  </div>
-
-                  <div className="col-span-3 bg-gray-50 rounded-lg p-3">
-                    <div className="text-xs font-medium text-gray-700 mb-2">Interní část</div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">
-                          Kč/j. náklad
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={item.internal_price_per_unit || ''}
-                          onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">
-                          Počet
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={item.internal_quantity || ''}
-                          onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-[#0a192f] focus:border-transparent"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">
-                          Náklad celkem
-                        </label>
-                        <input
-                          type="number"
-                          value={item.internal_total_price?.toFixed(2) || '0.00'}
-                          readOnly
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white"
-                        />
-                      </div>
-                    </div>
-                    <div className="mt-2 pt-2 border-t border-gray-300">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Zisk:</span>
-                        <span className="font-semibold text-green-600">
-                          {item.profit?.toFixed(2) || '0.00'} Kč
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+        <aside className="space-y-6">
+          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#0a192f]">Živý přehled</p>
+                <p className="text-xs text-gray-500">Aktualizuje se podle vyplněných dat.</p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-4 text-sm">
+              <div>
+                <div className="flex items-center justify-between text-gray-600">
+                  <span>Počet položek</span>
+                  <span className="font-semibold text-[#0a192f]">{items.length}</span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-gray-100">
+                  <div
+                    className="h-full rounded-full bg-[#0a192f]"
+                    style={{ width: `${Math.min(items.length * 20, 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-gray-600">
+                  <span>Průměrná položka</span>
+                  <span className="font-semibold text-[#0a192f]">
+                    {averageItemValue.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} Kč
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-gray-600">
+                  <span>Marže</span>
+                  <span
+                    className={`font-semibold ${
+                      marginPercentage >= 20 ? 'text-emerald-600' : 'text-amber-600'
+                    }`}
+                  >
+                    {marginPercentage.toFixed(1)} %
+                  </span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-gray-100">
+                  <div
+                    className={`h-full rounded-full ${
+                      marginPercentage >= 20 ? 'bg-emerald-500' : 'bg-amber-500'
+                    }`}
+                    style={{ width: `${Math.min(Math.max(marginPercentage, 0), 100)}%` }}
+                  />
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      <div className="bg-[#0a192f] text-white rounded-lg shadow p-6 sticky bottom-4">
-        <h3 className="text-lg font-semibold mb-4">Souhrn</h3>
-        <div className="grid grid-cols-3 gap-6">
-          <div>
-            <div className="text-sm opacity-80 mb-1">Celkem pro klienta</div>
-            <div className="text-2xl font-bold">{totals.clientTotal.toFixed(2)} Kč</div>
+          {categoryBreakdown.length > 0 && (
+            <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
+                  <Layers className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#0a192f]">Top kategorie</p>
+                  <p className="text-xs text-gray-500">Kde leží největší část rozpočtu.</p>
+                </div>
+              </div>
+              <ul className="mt-4 space-y-3 text-sm text-gray-600">
+                {categoryBreakdown.map((category) => (
+                  <li key={category.name} className="flex items-center justify-between">
+                    <span>{category.name}</span>
+                    <span className="font-semibold text-[#0a192f]">
+                      {category.total.toLocaleString('cs-CZ')} Kč
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="rounded-3xl border border-dashed border-[#0a192f]/30 bg-[#0a192f]/5 p-6 text-sm text-[#0a192f] shadow-sm">
+            <div className="flex items-start gap-3">
+              <Sparkles className="mt-1 h-5 w-5" />
+              <div className="space-y-2">
+                <p className="font-semibold">Tip pro wow efekt</p>
+                <p>
+                  Přidejte ke každé klíčové položce krátké vysvětlení hodnoty pro klienta. Uvidí, co přesně kupuje, a snáze kývne na rozpočet.
+                </p>
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="text-sm opacity-80 mb-1">Interní náklady</div>
-            <div className="text-2xl font-bold">{totals.internalTotal.toFixed(2)} Kč</div>
-          </div>
-          <div>
-            <div className="text-sm opacity-80 mb-1">Celkový zisk</div>
-            <div className="text-2xl font-bold text-green-400">{totals.profit.toFixed(2)} Kč</div>
-          </div>
-        </div>
+        </aside>
       </div>
     </div>
   );
