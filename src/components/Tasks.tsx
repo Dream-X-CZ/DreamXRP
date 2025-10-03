@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import {
   Plus,
   Search,
@@ -11,7 +12,9 @@ import {
   Tag,
   Edit3,
   Trash2,
-  BarChart3
+  BarChart3,
+  X
+
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Task, Project, Employee } from '../types/database';
@@ -121,10 +124,16 @@ export default function Tasks() {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData(initialFormState);
     setEditingTask(null);
-  };
+  }, []);
+
+  const handleCloseForm = useCallback(() => {
+    setShowForm(false);
+    resetForm();
+  }, [resetForm]);
+
 
   const handleCreateNew = () => {
     resetForm();
@@ -245,8 +254,8 @@ export default function Tasks() {
       }
 
       await loadData();
-      setShowForm(false);
-      resetForm();
+      handleCloseForm();
+
     } catch (err: any) {
       console.error('Error saving task:', err);
       setError('Úkol se nepodařilo uložit. Zkontrolujte prosím zadané údaje.');
@@ -254,6 +263,34 @@ export default function Tasks() {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!showForm) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [showForm]);
+
+  useEffect(() => {
+    if (!showForm) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleCloseForm();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showForm, handleCloseForm]);
+
 
   const projectMap = useMemo(() => {
     const map = new Map<string, Project>();
@@ -447,7 +484,9 @@ export default function Tasks() {
           <div className="px-4 py-3 rounded-xl bg-red-50 text-red-700 border border-red-100">
             {error}
           </div>
-        )}
+      )
+      }
+
 
         {loading ? (
           <div className="text-center py-16 text-slate-500">Načítání úkolů...</div>
@@ -566,173 +605,179 @@ export default function Tasks() {
         )}
       </section>
 
-      {showForm && (
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-[#0a192f]">
-                {editingTask ? 'Upravit úkol' : 'Nový úkol'}
-              </h2>
-              <p className="text-slate-500">Vyplňte informace o úkolu a přiřaďte ho ke konkrétnímu projektu.</p>
-            </div>
-            <button
-              onClick={() => {
-                setShowForm(false);
-                resetForm();
-              }}
-              className="text-slate-500 hover:text-slate-700"
-            >
-              Zavřít
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="mt-6 grid gap-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Název úkolu *</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={event => setFormData(prev => ({ ...prev, title: event.target.value }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                  placeholder="Např. Připravit podklady pro nabídku"
-                  required
-                />
+      {showForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseForm} />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-form-title"
+            className="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-100 p-6 max-h-[90vh] overflow-y-auto"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="task-form-title" className="text-2xl font-semibold text-[#0a192f]">
+                  {editingTask ? 'Upravit úkol' : 'Nový úkol'}
+                </h2>
+                <p className="text-slate-500">Vyplňte informace o úkolu a přiřaďte ho ke konkrétnímu projektu.</p>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Projekt *</label>
-                <select
-                  value={formData.project_id}
-                  onChange={event => setFormData(prev => ({ ...prev, project_id: event.target.value }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                  required
-                >
-                  <option value="">Vyberte projekt</option>
-                  {projects.map(project => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Přiřazeno</label>
-                <select
-                  value={formData.assigned_to}
-                  onChange={event => setFormData(prev => ({ ...prev, assigned_to: event.target.value }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                >
-                  <option value="">Nepřiřazeno</option>
-                  {employees.map(employee => (
-                    <option key={employee.id} value={employee.id}>
-                      {`${employee.first_name} ${employee.last_name}`.trim() || employee.first_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Termín dokončení</label>
-                <input
-                  type="date"
-                  value={formData.deadline}
-                  onChange={event => setFormData(prev => ({ ...prev, deadline: event.target.value }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Stav</label>
-                <select
-                  value={formData.status}
-                  onChange={event => setFormData(prev => ({ ...prev, status: event.target.value as Task['status'] }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                >
-                  {Object.entries(statusLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Priorita</label>
-                <select
-                  value={formData.priority}
-                  onChange={event => setFormData(prev => ({ ...prev, priority: event.target.value as Task['priority'] }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                >
-                  {Object.entries(priorityLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Odhadovaný čas (h)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={formData.estimated_hours}
-                  onChange={event => setFormData(prev => ({ ...prev, estimated_hours: event.target.value }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Skutečně strávený čas (h)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={formData.actual_hours}
-                  onChange={event => setFormData(prev => ({ ...prev, actual_hours: event.target.value }))}
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Popis</label>
-              <textarea
-                value={formData.description}
-                onChange={event => setFormData(prev => ({ ...prev, description: event.target.value }))}
-                rows={4}
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
-                placeholder="Shrňte detaily úkolu, akceptační kritéria nebo postup práce"
-              />
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setShowForm(false);
-                  resetForm();
-                }}
-                className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                onClick={handleCloseForm}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:text-slate-700 hover:border-slate-300"
+                aria-label="Zavřít formulář"
               >
-                Zrušit
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-[#0a192f] text-white hover:bg-[#112a4d] disabled:opacity-60"
-              >
-                {saving ? 'Ukládám...' : editingTask ? 'Uložit změny' : 'Vytvořit úkol'}
+                <X className="h-5 w-5" />
               </button>
             </div>
-          </form>
-        </section>
-      )}
+
+            <form onSubmit={handleSubmit} className="mt-6 grid gap-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Název úkolu *</label>
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={event => setFormData(prev => ({ ...prev, title: event.target.value }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                    placeholder="Např. Připravit podklady pro nabídku"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Projekt *</label>
+                  <select
+                    value={formData.project_id}
+                    onChange={event => setFormData(prev => ({ ...prev, project_id: event.target.value }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                    required
+                  >
+                    <option value="">Vyberte projekt</option>
+                    {projects.map(project => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Přiřazeno</label>
+                  <select
+                    value={formData.assigned_to}
+                    onChange={event => setFormData(prev => ({ ...prev, assigned_to: event.target.value }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  >
+                    <option value="">Nepřiřazeno</option>
+                    {employees.map(employee => (
+                      <option key={employee.id} value={employee.id}>
+                        {`${employee.first_name} ${employee.last_name}`.trim() || employee.first_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Termín dokončení</label>
+                  <input
+                    type="date"
+                    value={formData.deadline}
+                    onChange={event => setFormData(prev => ({ ...prev, deadline: event.target.value }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Stav</label>
+                  <select
+                    value={formData.status}
+                    onChange={event => setFormData(prev => ({ ...prev, status: event.target.value as Task['status'] }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  >
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Priorita</label>
+                  <select
+                    value={formData.priority}
+                    onChange={event => setFormData(prev => ({ ...prev, priority: event.target.value as Task['priority'] }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  >
+                    {Object.entries(priorityLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Odhadovaný čas (h)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={formData.estimated_hours}
+                    onChange={event => setFormData(prev => ({ ...prev, estimated_hours: event.target.value }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Skutečně strávený čas (h)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={formData.actual_hours}
+                    onChange={event => setFormData(prev => ({ ...prev, actual_hours: event.target.value }))}
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Popis</label>
+                <textarea
+                  value={formData.description}
+                  onChange={event => setFormData(prev => ({ ...prev, description: event.target.value }))}
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-[#0a192f] focus:ring-2 focus:ring-[#0a192f]/20"
+                  placeholder="Shrňte detaily úkolu, akceptační kritéria nebo postup práce"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseForm}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                >
+                  Zrušit
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-[#0a192f] text-white hover:bg-[#112a4d] disabled:opacity-60"
+                >
+                  {saving ? 'Ukládám...' : editingTask ? 'Uložit změny' : 'Vytvořit úkol'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+        ) : null}
+
     </div>
   );
 }
