@@ -1,861 +1,365 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Edit3,
-  ExternalLink,
-  Filter,
-  Loader2,
-  Plus,
-  RefreshCcw,
-  Trash2
-} from 'lucide-react';
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  EllipsisHorizontalIcon
+} from '@heroicons/react/20/solid';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { supabase } from '../lib/supabase';
-import { ensureUserOrganization } from '../lib/organization';
-import type { CalendarEvent as CalendarEventRecord, Project, Task } from '../types/database';
-
-type TaskWithProject = Task & { project?: Project | null };
-
-type CalendarDisplayEvent = {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  source: 'calendar' | 'task';
-  type?: string | null;
-  description?: string | null;
-  calendarEvent?: CalendarEventRecord;
-  task?: TaskWithProject | null;
-  allDay?: boolean;
-};
-
-type EventFormState = {
-  title: string;
-  description: string;
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  endTime: string;
-  type: string;
-  task_id: string;
-};
-
-const initialFormState: EventFormState = {
-  title: '',
-  description: '',
-  startDate: '',
-  startTime: '',
-  endDate: '',
-  endTime: '',
-  type: 'event',
-  task_id: ''
-};
-
-const eventTypeOptions: { value: string; label: string }[] = [
-  { value: 'event', label: 'Událost' },
-  { value: 'meeting', label: 'Schůzka' },
-  { value: 'milestone', label: 'Milník' },
-  { value: 'deadline', label: 'Deadline' },
-  { value: 'workshop', label: 'Workshop' },
-  { value: 'other', label: 'Ostatní' }
+const events = [
+  { id: 1, name: 'Maple syrup museum', time: '3PM', datetime: '2022-01-15T09:00', href: '#' },
+  { id: 2, name: 'Hockey game', time: '7PM', datetime: '2022-01-22T19:00', href: '#' }
 ];
 
-function formatDateInput(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatTimeInput(date: Date) {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function ensureEndAfterStart(start: Date, end: Date) {
-  if (end.getTime() <= start.getTime()) {
-    const adjusted = new Date(start);
-    adjusted.setHours(start.getHours() + 1);
-    return adjusted;
-  }
-  return end;
-}
-
-function determineAllDay(start: Date, end: Date) {
-  const startMidnight = start.getHours() === 0 && start.getMinutes() === 0;
-  const endEndOfDay = end.getHours() === 23 && end.getMinutes() >= 55;
-  const duration = end.getTime() - start.getTime();
-  return startMidnight && endEndOfDay && duration >= 23 * 60 * 60 * 1000;
-}
-
-function startOfWeek(date: Date) {
-  const result = new Date(date);
-  const day = result.getDay();
-  const diff = (day + 6) % 7; // convert Sunday (0) -> 6
-  result.setDate(result.getDate() - diff);
-  result.setHours(0, 0, 0, 0);
-  return result;
-}
-
-function addDays(date: Date, amount: number) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + amount);
-  return result;
-}
-
-const dayFormatter = new Intl.DateTimeFormat('cs-CZ', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'numeric'
-});
-
-const timeFormatter = new Intl.DateTimeFormat('cs-CZ', {
-  hour: '2-digit',
-  minute: '2-digit'
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat('cs-CZ', {
-  day: 'numeric',
-  month: 'numeric',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit'
-});
-
-const dateFormatter = new Intl.DateTimeFormat('cs-CZ', {
-  day: 'numeric',
-  month: 'numeric',
-  year: 'numeric'
-});
+const days = [
+  { date: '2021-12-27', events: [] },
+  { date: '2021-12-28', events: [] },
+  { date: '2021-12-29', events: [] },
+  { date: '2021-12-30', events: [] },
+  { date: '2021-12-31', events: [] },
+  { date: '2022-01-01', isCurrentMonth: true, events: [] },
+  { date: '2022-01-02', isCurrentMonth: true, events: [] },
+  {
+    date: '2022-01-03',
+    isCurrentMonth: true,
+    events: [
+      { id: 1, name: 'Design review', time: '10AM', datetime: '2022-01-03T10:00', href: '#' },
+      { id: 2, name: 'Sales meeting', time: '2PM', datetime: '2022-01-03T14:00', href: '#' }
+    ]
+  },
+  { date: '2022-01-04', isCurrentMonth: true, events: [] },
+  { date: '2022-01-05', isCurrentMonth: true, events: [] },
+  { date: '2022-01-06', isCurrentMonth: true, events: [] },
+  {
+    date: '2022-01-07',
+    isCurrentMonth: true,
+    events: [{ id: 3, name: 'Date night', time: '6PM', datetime: '2022-01-08T18:00', href: '#' }]
+  },
+  { date: '2022-01-08', isCurrentMonth: true, events: [] },
+  { date: '2022-01-09', isCurrentMonth: true, events: [] },
+  { date: '2022-01-10', isCurrentMonth: true, events: [] },
+  { date: '2022-01-11', isCurrentMonth: true, events: [] },
+  {
+    date: '2022-01-12',
+    isCurrentMonth: true,
+    isToday: true,
+    events: [{ id: 6, name: "Sam's birthday party", time: '2PM', datetime: '2022-01-25T14:00', href: '#' }]
+  },
+  { date: '2022-01-13', isCurrentMonth: true, events: [] },
+  { date: '2022-01-14', isCurrentMonth: true, events: [] },
+  { date: '2022-01-15', isCurrentMonth: true, events: [] },
+  { date: '2022-01-16', isCurrentMonth: true, events: [] },
+  { date: '2022-01-17', isCurrentMonth: true, events: [] },
+  { date: '2022-01-18', isCurrentMonth: true, events: [] },
+  { date: '2022-01-19', isCurrentMonth: true, events: [] },
+  { date: '2022-01-20', isCurrentMonth: true, events: [] },
+  { date: '2022-01-21', isCurrentMonth: true, events: [] },
+  {
+    date: '2022-01-22',
+    isCurrentMonth: true,
+    isSelected: true,
+    events: [
+      { id: 4, name: 'Maple syrup museum', time: '3PM', datetime: '2022-01-22T15:00', href: '#' },
+      { id: 5, name: 'Hockey game', time: '7PM', datetime: '2022-01-22T19:00', href: '#' }
+    ]
+  },
+  { date: '2022-01-23', isCurrentMonth: true, events: [] },
+  { date: '2022-01-24', isCurrentMonth: true, events: [] },
+  { date: '2022-01-25', isCurrentMonth: true, events: [] },
+  { date: '2022-01-26', isCurrentMonth: true, events: [] },
+  { date: '2022-01-27', isCurrentMonth: true, events: [] },
+  { date: '2022-01-28', isCurrentMonth: true, events: [] },
+  { date: '2022-01-29', isCurrentMonth: true, events: [] },
+  { date: '2022-01-30', isCurrentMonth: true, events: [] },
+  { date: '2022-01-31', isCurrentMonth: true, events: [] },
+  { date: '2022-02-01', events: [] },
+  { date: '2022-02-02', events: [] },
+  { date: '2022-02-03', events: [] },
+  {
+    date: '2022-02-04',
+    events: [{ id: 7, name: 'Cinema with friends', time: '9PM', datetime: '2022-02-04T21:00', href: '#' }]
+  },
+  { date: '2022-02-05', events: [] },
+  { date: '2022-02-06', events: [] }
+];
 
 export default function Calendar() {
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEventRecord[]>([]);
-  const [tasks, setTasks] = useState<TaskWithProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<CalendarDisplayEvent | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<EventFormState>(initialFormState);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<CalendarEventRecord | null>(null);
-  const [filters, setFilters] = useState({ calendar: true, tasks: true, type: 'all' as string });
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date()));
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setCalendarEvents([]);
-        setTasks([]);
-        setError('Pro práci s kalendářem musíte být přihlášeni.');
-        setLoading(false);
-        return;
-      }
-
-      const orgId = await ensureUserOrganization(user.id);
-      setOrganizationId(orgId);
-
-      const [calendarRes, tasksRes] = await Promise.all([
-        supabase
-          .from('calendar_events')
-          .select('*, task:tasks(*, project:projects(*))')
-          .eq('organization_id', orgId)
-          .order('start_at', { ascending: true }),
-        supabase
-          .from('tasks')
-          .select('*, project:projects(id, name, organization_id)')
-          .not('deadline', 'is', null)
-          .eq('project.organization_id', orgId)
-      ]);
-
-      if (calendarRes.error) throw calendarRes.error;
-      if (tasksRes.error) throw tasksRes.error;
-
-      setCalendarEvents((calendarRes.data as CalendarEventRecord[]) ?? []);
-      setTasks((tasksRes.data as TaskWithProject[]) ?? []);
-    } catch (err: any) {
-      console.error('Error loading calendar data:', err);
-      setError('Nepodařilo se načíst data kalendáře. Zkuste to prosím znovu.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const availableTypes = useMemo(() => {
-    const typeSet = new Set<string>();
-
-    calendarEvents.forEach(event => {
-      if (event.type) {
-        typeSet.add(event.type);
-      }
-    });
-
-    if (tasks.length > 0) {
-      typeSet.add('task_deadline');
-    }
-
-    return ['all', ...Array.from(typeSet)];
-  }, [calendarEvents, tasks]);
-
-  const tasksForSelect = useMemo(() => {
-    const map = new Map<string, TaskWithProject>();
-    tasks.forEach(task => {
-      map.set(task.id, task);
-    });
-
-    if (editingEvent?.task && !map.has(editingEvent.task.id)) {
-      map.set(editingEvent.task.id, editingEvent.task as TaskWithProject);
-    }
-
-    return Array.from(map.values());
-  }, [tasks, editingEvent]);
-
-  const displayedEvents = useMemo(() => {
-    const items: CalendarDisplayEvent[] = [];
-
-    if (filters.calendar) {
-      for (const event of calendarEvents) {
-        const start = new Date(event.start_at);
-        const endRaw = new Date(event.end_at);
-
-        if (Number.isNaN(start.getTime()) || Number.isNaN(endRaw.getTime())) {
-          continue;
-        }
-
-        const end = ensureEndAfterStart(start, endRaw);
-        const allDay = determineAllDay(start, end);
-
-        items.push({
-          id: event.id,
-          title: event.title,
-          start,
-          end,
-          source: 'calendar',
-          type: event.type,
-          description: event.description,
-          calendarEvent: event,
-          task: event.task ?? null,
-          allDay
-        });
-      }
-    }
-
-    if (filters.tasks) {
-      for (const task of tasks) {
-        if (!task.deadline) continue;
-        const start = new Date(task.deadline);
-        if (Number.isNaN(start.getTime())) continue;
-
-        const hasTime = task.deadline.includes('T');
-        const end = new Date(start);
-
-        if (hasTime) {
-          end.setHours(end.getHours() + 1);
-        } else {
-          end.setHours(23, 59, 0, 0);
-        }
-
-        items.push({
-          id: `task-${task.id}`,
-          title: `${task.title} (deadline)`,
-          start,
-          end,
-          source: 'task',
-          type: 'task_deadline',
-          description: task.description ?? null,
-          task,
-          allDay: !hasTime
-        });
-      }
-    }
-
-    return items.filter(event => filters.type === 'all' || event.type === filters.type);
-  }, [calendarEvents, tasks, filters]);
-
-  useEffect(() => {
-    if (!selectedEvent) return;
-
-    const stillExists = displayedEvents.some(event => event.id === selectedEvent.id);
-    if (!stillExists) {
-      setSelectedEvent(null);
-    }
-  }, [displayedEvents, selectedEvent]);
-
-  const weekDays = useMemo(() => {
-    return Array.from({ length: 7 }, (_, index) => addDays(currentWeekStart, index));
-  }, [currentWeekStart]);
-
-  const handleCreateNew = useCallback(() => {
-    setEditingEvent(null);
-    setFormData(initialFormState);
-    setFormError(null);
-    setShowForm(true);
-  }, []);
-
-  const handleEditEvent = useCallback((event: CalendarDisplayEvent) => {
-    if (event.source !== 'calendar' || !event.calendarEvent) return;
-
-    const start = new Date(event.calendarEvent.start_at);
-    const end = new Date(event.calendarEvent.end_at);
-    const allDay = event.allDay ?? false;
-
-    setEditingEvent(event.calendarEvent);
-    setFormError(null);
-    setFormData({
-      title: event.calendarEvent.title,
-      description: event.calendarEvent.description ?? '',
-      startDate: formatDateInput(start),
-      startTime: allDay ? '' : formatTimeInput(start),
-      endDate: formatDateInput(end),
-      endTime: allDay ? '' : formatTimeInput(end),
-      type: event.calendarEvent.type ?? 'event',
-      task_id: event.calendarEvent.task_id ?? ''
-    });
-    setShowForm(true);
-  }, []);
-
-  const handleConvertTaskEvent = useCallback((event: CalendarDisplayEvent) => {
-    if (!event.task) return;
-
-    setEditingEvent(null);
-    setFormError(null);
-    setFormData({
-      title: event.task.title,
-      description: event.task.description ?? '',
-      startDate: formatDateInput(event.start),
-      startTime: event.allDay ? '' : formatTimeInput(event.start),
-      endDate: formatDateInput(event.end),
-      endTime: event.allDay ? '' : formatTimeInput(event.end),
-      type: 'deadline',
-      task_id: event.task.id
-    });
-    setShowForm(true);
-  }, []);
-
-  const handleCloseForm = useCallback(() => {
-    setShowForm(false);
-    setFormError(null);
-    setFormData(initialFormState);
-    setEditingEvent(null);
-  }, []);
-
-  useEffect(() => {
-    if (!showForm) return;
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [showForm]);
-
-  const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setFormError(null);
-
-      if (!organizationId) {
-        setFormError('Nepodařilo se načíst organizaci. Obnovte prosím stránku.');
-        return;
-      }
-
-      if (!formData.title.trim()) {
-        setFormError('Zadejte název události.');
-        return;
-      }
-
-      if (!formData.startDate) {
-        setFormError('Vyberte datum začátku události.');
-        return;
-      }
-
-      const startDateTime = formData.startTime
-        ? new Date(`${formData.startDate}T${formData.startTime}:00`)
-        : new Date(`${formData.startDate}T00:00:00`);
-
-      const endDateValue = formData.endDate || formData.startDate;
-      const endDateTime = formData.endTime
-        ? new Date(`${endDateValue}T${formData.endTime}:00`)
-        : new Date(`${endDateValue}T23:59:00`);
-
-      if (Number.isNaN(startDateTime.getTime()) || Number.isNaN(endDateTime.getTime())) {
-        setFormError('Neplatný formát data nebo času.');
-        return;
-      }
-
-      if (endDateTime.getTime() < startDateTime.getTime()) {
-        setFormError('Konec události nemůže být před jejím začátkem.');
-        return;
-      }
-
-      setSaving(true);
-
-      const payload = {
-        title: formData.title.trim(),
-        description: formData.description.trim() ? formData.description.trim() : null,
-        start_at: startDateTime.toISOString(),
-        end_at: endDateTime.toISOString(),
-        type: formData.type || 'event',
-        task_id: formData.task_id ? formData.task_id : null
-      };
-
-      try {
-        if (editingEvent) {
-          const { error: updateError } = await supabase
-            .from('calendar_events')
-            .update({ ...payload, updated_at: new Date().toISOString() })
-            .eq('id', editingEvent.id);
-
-          if (updateError) throw updateError;
-        } else {
-          const { error: insertError } = await supabase.from('calendar_events').insert([
-            {
-              ...payload,
-              organization_id: organizationId
-            }
-          ]);
-
-          if (insertError) throw insertError;
-        }
-
-        await loadData();
-        handleCloseForm();
-      } catch (err: any) {
-        console.error('Error saving calendar event:', err);
-        setFormError('Nepodařilo se uložit událost. Zkuste to prosím znovu.');
-      } finally {
-        setSaving(false);
-      }
-    },
-    [organizationId, formData, editingEvent, handleCloseForm, loadData]
-  );
-
-  const handleDeleteEvent = useCallback(
-    async (event: CalendarDisplayEvent) => {
-      if (event.source !== 'calendar' || !event.calendarEvent) return;
-      if (!confirm(`Opravdu chcete smazat událost "${event.title}"?`)) return;
-
-      try {
-        const { error: deleteError } = await supabase
-          .from('calendar_events')
-          .delete()
-          .eq('id', event.calendarEvent.id);
-
-        if (deleteError) throw deleteError;
-
-        setSelectedEvent(null);
-        await loadData();
-      } catch (err: any) {
-        console.error('Error deleting calendar event:', err);
-        alert('Událost se nepodařilo smazat.');
-      }
-    },
-    [loadData]
-  );
-
-  const refreshButton = (
-    <button
-      onClick={loadData}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-[#0a192f] shadow hover:bg-slate-100 transition"
-      title="Obnovit data"
-    >
-      <RefreshCcw className="w-4 h-4" />
-      <span>Obnovit</span>
-    </button>
-  );
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-[#0a192f] flex items-center gap-2">
-            <CalendarIcon className="w-6 h-6" />
-            Kalendář
-          </h1>
-          <p className="text-gray-600">Plánujte týmové události a sledujte termíny úkolů na jednom místě.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {refreshButton}
-          <button
-            onClick={handleCreateNew}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0a192f] text-white shadow hover:bg-[#0c2242] transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nová událost</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-4">
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <span>Zdroj:</span>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.calendar}
-                onChange={event => setFilters(prev => ({ ...prev, calendar: event.target.checked }))}
-              />
-              Události
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={filters.tasks}
-                onChange={event => setFilters(prev => ({ ...prev, tasks: event.target.checked }))}
-              />
-              Deadliny úkolů
-            </label>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <span>Typ:</span>
-            <select
-              value={filters.type}
-              onChange={event => setFilters(prev => ({ ...prev, type: event.target.value }))}
-              className="border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-            >
-              {availableTypes.map(option => (
-                <option key={option} value={option}>
-                  {option === 'all'
-                    ? 'Vše'
-                    : option === 'task_deadline'
-                    ? 'Deadliny úkolů'
-                    : eventTypeOptions.find(type => type.value === option)?.label ?? option}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-gray-700">
+    <div className="lg:flex lg:h-full lg:flex-col">
+      <header className="flex items-center justify-between border-b border-gray-200 px-6 py-4 lg:flex-none">
+        <h1 className="text-base font-semibold text-gray-900">
+          <time dateTime="2022-01">January 2022</time>
+        </h1>
+        <div className="flex items-center">
+          <div className="relative flex items-center rounded-md bg-white shadow-xs outline -outline-offset-1 outline-gray-300 md:items-stretch">
             <button
-              onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))}
-              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition"
-              title="Předchozí týden"
+              type="button"
+              className="flex h-9 w-12 items-center justify-center rounded-l-md pr-1 text-gray-400 hover:text-gray-500 focus:relative md:w-9 md:pr-0 md:hover:bg-gray-50"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <span className="sr-only">Previous month</span>
+              <ChevronLeftIcon aria-hidden="true" className="size-5" />
             </button>
-            <span className="font-medium">
-              {dateFormatter.format(currentWeekStart)} – {dateFormatter.format(addDays(currentWeekStart, 6))}
-            </span>
             <button
-              onClick={() => setCurrentWeekStart(prev => addDays(prev, 7))}
-              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition"
-              title="Další týden"
+              type="button"
+              className="hidden px-3.5 text-sm font-semibold text-gray-900 hover:bg-gray-50 focus:relative md:block"
             >
-              <ChevronRight className="w-4 h-4" />
+              Today
+            </button>
+            <span className="relative -mx-px h-5 w-px bg-gray-300 md:hidden" />
+            <button
+              type="button"
+              className="flex h-9 w-12 items-center justify-center rounded-r-md pl-1 text-gray-400 hover:text-gray-500 focus:relative md:w-9 md:pl-0 md:hover:bg-gray-50"
+            >
+              <span className="sr-only">Next month</span>
+              <ChevronRightIcon aria-hidden="true" className="size-5" />
             </button>
           </div>
-        </div>
+          <div className="hidden md:ml-4 md:flex md:items-center">
+            <Menu as="div" className="relative">
+              <MenuButton
+                type="button"
+                className="flex items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring inset-ring-gray-300 hover:bg-gray-50"
+              >
+                Month view
+                <ChevronDownIcon aria-hidden="true" className="-mr-1 size-5 text-gray-400" />
+              </MenuButton>
 
-        <div className="overflow-x-auto">
-          <div className="min-w-[700px]">
-            <div className="grid grid-cols-7 gap-3">
-              {weekDays.map(day => {
-                const dayEvents = displayedEvents
-                  .filter(event => event.start.getFullYear() === day.getFullYear() && event.start.getMonth() === day.getMonth() && event.start.getDate() === day.getDate())
-                  .sort((a, b) => a.start.getTime() - b.start.getTime());
-
-                return (
-                  <div key={day.toISOString()} className="border border-slate-200 rounded-lg p-3 bg-slate-50/60">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-[#0a192f] capitalize">
-                        {dayFormatter.format(day)}
-                      </span>
-                      <span className="text-xs text-gray-500">{dayEvents.length} ud.</span>
-                    </div>
-
-                    <div className="space-y-2 min-h-[80px]">
-                      {dayEvents.length === 0 && (
-                        <p className="text-xs text-gray-500 bg-white border border-dashed border-slate-300 rounded-lg p-3 text-center">
-                          Žádné události
-                        </p>
-                      )}
-
-                      {dayEvents.map(event => (
-                        <button
-                          key={event.id}
-                          onClick={() => setSelectedEvent(event)}
-                          className={`w-full text-left p-3 rounded-lg border shadow-sm transition ${
-                            event.source === 'task'
-                              ? 'bg-blue-50 border-blue-100 hover:bg-blue-100'
-                              : 'bg-cyan-50 border-cyan-100 hover:bg-cyan-100'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                              {event.source === 'task' ? 'Úkol' : 'Událost'}
-                            </span>
-                            {event.type && (
-                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/70 text-gray-600">
-                                {event.type === 'task_deadline'
-                                  ? 'Deadline'
-                                  : eventTypeOptions.find(option => option.value === event.type)?.label ?? event.type}
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-semibold text-[#0a192f] mt-1">{event.title}</p>
-                          <p className="text-xs text-gray-600 mt-1">
-                            {event.allDay
-                              ? 'Celý den'
-                              : `${timeFormatter.format(event.start)} – ${timeFormatter.format(event.end)}`}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {loading && (
-          <div className="mt-6 flex items-center justify-center text-gray-500">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Načítání kalendáře…
-          </div>
-        )}
-
-        {error && !loading && (
-          <div className="mt-6 flex flex-col items-center justify-center text-center text-red-600">
-            <p>{error}</p>
-            <button
-              onClick={loadData}
-              className="mt-3 px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition"
-            >
-              Zkusit znovu
-            </button>
-          </div>
-        )}
-      </div>
-
-      {selectedEvent && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                    selectedEvent.source === 'task'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-cyan-100 text-cyan-700'
-                  }`}
-                >
-                  {selectedEvent.source === 'task' ? 'Úkol' : 'Událost'}
-                </span>
-                {selectedEvent.type && (
-                  <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-slate-100 text-slate-600">
-                    {selectedEvent.type === 'task_deadline'
-                      ? 'Deadline úkolu'
-                      : eventTypeOptions.find(option => option.value === selectedEvent.type)?.label ??
-                        selectedEvent.type}
-                  </span>
-                )}
-              </div>
-              <h2 className="text-xl font-semibold text-[#0a192f] mt-3">{selectedEvent.title}</h2>
-              <p className="text-sm text-gray-600 mt-2">
-                {selectedEvent.allDay
-                  ? `${dateFormatter.format(selectedEvent.start)} – ${dateFormatter.format(selectedEvent.end)}`
-                  : `${dateTimeFormatter.format(selectedEvent.start)} – ${dateTimeFormatter.format(selectedEvent.end)}`}
-              </p>
-
-              {selectedEvent.description && (
-                <p className="text-gray-700 mt-4 whitespace-pre-line">{selectedEvent.description}</p>
-              )}
-
-              {selectedEvent.task && (
-                <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <p className="text-sm text-gray-600">Propojený úkol</p>
-                  <p className="font-medium text-[#0a192f] mt-1">{selectedEvent.task.title}</p>
-                  {selectedEvent.task.project?.name && (
-                    <p className="text-sm text-gray-600 mt-1">Projekt: {selectedEvent.task.project.name}</p>
-                  )}
-                  <div className="mt-3 flex flex-wrap gap-2">
+              <MenuItems
+                transition
+                className="absolute right-0 z-10 mt-3 w-36 origin-top-right overflow-hidden rounded-md bg-white shadow-lg outline-1 outline-black/5 transition data-closed:scale-95 data-closed:transform data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
+              >
+                <div className="py-1">
+                  <MenuItem>
                     <a
-                      href="#tasks"
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-sm text-[#0a192f] hover:bg-slate-100 transition"
+                      href="#"
+                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
                     >
-                      <ExternalLink className="w-4 h-4" />
-                      Zobrazit v úkolech
+                      Day view
                     </a>
-                    {selectedEvent.source === 'task' && (
-                      <button
-                        onClick={() => handleConvertTaskEvent(selectedEvent)}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0a192f] text-white text-sm hover:bg-[#0c2242] transition"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Vytvořit kalendářovou událost
-                      </button>
-                    )}
-                  </div>
+                  </MenuItem>
+                  <MenuItem>
+                    <a
+                      href="#"
+                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                    >
+                      Week view
+                    </a>
+                  </MenuItem>
+                  <MenuItem>
+                    <a
+                      href="#"
+                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                    >
+                      Month view
+                    </a>
+                  </MenuItem>
+                  <MenuItem>
+                    <a
+                      href="#"
+                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                    >
+                      Year view
+                    </a>
+                  </MenuItem>
                 </div>
-              )}
-            </div>
+              </MenuItems>
+            </Menu>
+            <div className="ml-6 h-6 w-px bg-gray-300" />
+            <button
+              type="button"
+              className="ml-6 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            >
+              Add event
+            </button>
+          </div>
+          <Menu as="div" className="relative ml-6 md:hidden">
+            <MenuButton className="-mx-2 flex items-center rounded-full border border-transparent p-2 text-gray-400 hover:text-gray-500">
+              <span className="sr-only">Open menu</span>
+              <EllipsisHorizontalIcon aria-hidden="true" className="size-5" />
+            </MenuButton>
 
-            {selectedEvent.source === 'calendar' && (
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => handleEditEvent(selectedEvent)}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm text-[#0a192f] hover:bg-slate-100 transition"
-                >
-                  <Edit3 className="w-4 h-4" />
-                  Upravit
-                </button>
-                <button
-                  onClick={() => handleDeleteEvent(selectedEvent)}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-sm text-red-700 hover:bg-red-200 transition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Smazat
-                </button>
+            <MenuItems
+              transition
+              className="absolute right-0 z-10 mt-3 w-36 origin-top-right divide-y divide-gray-100 overflow-hidden rounded-md bg-white shadow-lg outline-1 outline-black/5 transition data-closed:scale-95 data-closed:transform data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
+            >
+              <div className="py-1">
+                <MenuItem>
+                  <a
+                    href="#"
+                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  >
+                    Create event
+                  </a>
+                </MenuItem>
               </div>
-            )}
+              <div className="py-1">
+                <MenuItem>
+                  <a
+                    href="#"
+                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  >
+                    Go to today
+                  </a>
+                </MenuItem>
+              </div>
+              <div className="py-1">
+                <MenuItem>
+                  <a
+                    href="#"
+                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  >
+                    Day view
+                  </a>
+                </MenuItem>
+                <MenuItem>
+                  <a
+                    href="#"
+                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  >
+                    Week view
+                  </a>
+                </MenuItem>
+                <MenuItem>
+                  <a
+                    href="#"
+                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  >
+                    Month view
+                  </a>
+                </MenuItem>
+                <MenuItem>
+                  <a
+                    href="#"
+                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  >
+                    Year view
+                  </a>
+                </MenuItem>
+              </div>
+            </MenuItems>
+          </Menu>
+        </div>
+      </header>
+      <div className="shadow-sm ring-1 ring-black/5 lg:flex lg:flex-auto lg:flex-col">
+        <div className="grid grid-cols-7 gap-px border-b border-gray-300 bg-gray-200 text-center text-xs/6 font-semibold text-gray-700 lg:flex-none">
+          <div className="flex justify-center bg-white py-2">
+            <span>M</span>
+            <span className="sr-only sm:not-sr-only">on</span>
+          </div>
+          <div className="flex justify-center bg-white py-2">
+            <span>T</span>
+            <span className="sr-only sm:not-sr-only">ue</span>
+          </div>
+          <div className="flex justify-center bg-white py-2">
+            <span>W</span>
+            <span className="sr-only sm:not-sr-only">ed</span>
+          </div>
+          <div className="flex justify-center bg-white py-2">
+            <span>T</span>
+            <span className="sr-only sm:not-sr-only">hu</span>
+          </div>
+          <div className="flex justify-center bg-white py-2">
+            <span>F</span>
+            <span className="sr-only sm:not-sr-only">ri</span>
+          </div>
+          <div className="flex justify-center bg-white py-2">
+            <span>S</span>
+            <span className="sr-only sm:not-sr-only">at</span>
+          </div>
+          <div className="flex justify-center bg-white py-2">
+            <span>S</span>
+            <span className="sr-only sm:not-sr-only">un</span>
           </div>
         </div>
-      )}
-
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
-          <div className="bg-white w-full max-w-2xl rounded-xl shadow-lg border border-slate-200 p-6 relative">
-            <h3 className="text-xl font-semibold text-[#0a192f] mb-4">
-              {editingEvent ? 'Upravit událost' : 'Nová událost'}
-            </h3>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Název</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={event => setFormData(prev => ({ ...prev, title: event.target.value }))}
-                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                  placeholder="Název události"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Popis</label>
-                <textarea
-                  value={formData.description}
-                  onChange={event => setFormData(prev => ({ ...prev, description: event.target.value }))}
-                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                  rows={3}
-                  placeholder="Detaily události"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Začátek</label>
-                  <div className="mt-1 grid grid-cols-2 gap-2">
-                    <input
-                      type="date"
-                      value={formData.startDate}
-                      onChange={event => setFormData(prev => ({ ...prev, startDate: event.target.value }))}
-                      className="border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                      required
-                    />
-                    <input
-                      type="time"
-                      value={formData.startTime}
-                      onChange={event => setFormData(prev => ({ ...prev, startTime: event.target.value }))}
-                      className="border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Konec</label>
-                  <div className="mt-1 grid grid-cols-2 gap-2">
-                    <input
-                      type="date"
-                      value={formData.endDate}
-                      onChange={event => setFormData(prev => ({ ...prev, endDate: event.target.value }))}
-                      className="border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                    />
-                    <input
-                      type="time"
-                      value={formData.endTime}
-                      onChange={event => setFormData(prev => ({ ...prev, endTime: event.target.value }))}
-                      className="border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Pokud konec nevyplníte, použije se datum začátku.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Typ události</label>
-                  <select
-                    value={formData.type}
-                    onChange={event => setFormData(prev => ({ ...prev, type: event.target.value }))}
-                    className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                  >
-                    {eventTypeOptions.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Propojit s úkolem</label>
-                  <select
-                    value={formData.task_id}
-                    onChange={event => setFormData(prev => ({ ...prev, task_id: event.target.value }))}
-                    className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a192f]"
-                  >
-                    <option value="">Nepropojovat</option>
-                    {tasksForSelect.map(task => (
-                      <option key={task.id} value={task.id}>
-                        {task.project?.name ? `${task.project.name} · ${task.title}` : task.title}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Propojením získáte rychlý přístup z detailu úkolu přímo na událost.
-                  </p>
-                </div>
-              </div>
-
-              {formError && <p className="text-sm text-red-600">{formError}</p>}
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={handleCloseForm}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-[#0a192f] hover:bg-slate-100 transition"
+        <div className="flex bg-gray-200 text-xs/6 text-gray-700 lg:flex-auto">
+          <div className="hidden w-full lg:grid lg:grid-cols-7 lg:grid-rows-6 lg:gap-px">
+            {days.map(day => (
+              <div
+                key={day.date}
+                data-is-today={day.isToday ? '' : undefined}
+                data-is-current-month={day.isCurrentMonth ? '' : undefined}
+                className="group relative bg-gray-50 px-3 py-2 text-gray-500 data-is-current-month:bg-white"
+              >
+                <time
+                  dateTime={day.date}
+                  className="relative group-not-data-is-current-month:opacity-75 in-data-is-today:flex in-data-is-today:size-6 in-data-is-today:items-center in-data-is-today:justify-center in-data-is-today:rounded-full in-data-is-today:bg-indigo-600 in-data-is-today:font-semibold in-data-is-today:text-white"
                 >
-                  Zavřít
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-[#0a192f] text-white hover:bg-[#0c2242] transition disabled:opacity-70"
-                >
-                  {saving ? 'Ukládám…' : editingEvent ? 'Uložit změny' : 'Vytvořit událost'}
-                </button>
+                  {day.date.split('-').pop()?.replace(/^0/, '')}
+                </time>
+                {day.events.length > 0 ? (
+                  <ol className="mt-2">
+                    {day.events.slice(0, 2).map(event => (
+                      <li key={event.id}>
+                        <a href={event.href} className="group flex">
+                          <p className="flex-auto truncate font-medium text-gray-900 group-hover:text-indigo-600">
+                            {event.name}
+                          </p>
+                          <time
+                            dateTime={event.datetime}
+                            className="ml-3 hidden flex-none text-gray-500 group-hover:text-indigo-600 xl:block"
+                          >
+                            {event.time}
+                          </time>
+                        </a>
+                      </li>
+                    ))}
+                    {day.events.length > 2 ? <li className="text-gray-500">+ {day.events.length - 2} more</li> : null}
+                  </ol>
+                ) : null}
               </div>
-            </form>
+            ))}
+          </div>
+          <div className="isolate grid w-full grid-cols-7 grid-rows-6 gap-px lg:hidden">
+            {days.map(day => (
+              <button
+                key={day.date}
+                type="button"
+                data-is-today={day.isToday ? '' : undefined}
+                data-is-selected={day.isSelected ? '' : undefined}
+                data-is-current-month={day.isCurrentMonth ? '' : undefined}
+                className="group relative flex h-14 flex-col px-3 py-2 not-data-is-current-month:bg-gray-50 not-data-is-selected:not-data-is-current-month:not-data-is-today:text-gray-500 hover:bg-gray-100 focus:z-10 data-is-current-month:bg-white not-data-is-selected:data-is-current-month:not-data-is-today:text-gray-900 data-is-current-month:hover:bg-gray-100 data-is-selected:font-semibold data-is-selected:text-white data-is-today:font-semibold not-data-is-selected:data-is-today:text-indigo-600"
+              >
+                <time
+                  dateTime={day.date}
+                  className="ml-auto group-not-data-is-current-month:opacity-75 in-data-is-selected:flex in-data-is-selected:size-6 in-data-is-selected:items-center in-data-is-selected:justify-center in-data-is-selected:rounded-full in-data-is-selected:not-in-data-is-today:bg-gray-900 in-data-is-selected:in-data-is-today:bg-indigo-600"
+                >
+                  {day.date.split('-').pop()?.replace(/^0/, '')}
+                </time>
+                <span className="sr-only">{day.events.length} events</span>
+                {day.events.length > 0 ? (
+                  <span className="-mx-0.5 mt-auto flex flex-wrap-reverse">
+                    {day.events.map(event => (
+                      <span key={event.id} className="mx-0.5 mb-1 size-1.5 rounded-full bg-gray-400" />
+                    ))}
+                  </span>
+                ) : null}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+      </div>
+      <div className="relative px-4 py-10 sm:px-6 lg:hidden">
+        <ol className="divide-y divide-gray-100 overflow-hidden rounded-lg bg-white text-sm shadow-sm outline-1 outline-black/5">
+          {events.map(event => (
+            <li key={event.id} className="group flex p-4 pr-6 focus-within:bg-gray-50 hover:bg-gray-50">
+              <div className="flex-auto">
+                <p className="font-semibold text-gray-900">{event.name}</p>
+                <time dateTime={event.datetime} className="mt-2 flex items-center text-gray-700">
+                  <ClockIcon aria-hidden="true" className="mr-2 size-5 text-gray-400" />
+                  {event.time}
+                </time>
+              </div>
+              <a
+                href={event.href}
+                className="ml-6 flex-none self-center rounded-md bg-white px-3 py-2 font-semibold text-gray-900 opacity-0 shadow-xs ring-1 ring-gray-300 ring-inset group-hover:opacity-100 hover:ring-gray-400 focus:opacity-100"
+              >
+                Edit<span className="sr-only">, {event.name}</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }
