@@ -35,19 +35,32 @@ export default function TeamSettings() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: memberData } = await supabase
+      const { data: memberships, error: membershipError } = await supabase
         .from('organization_members')
         .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+        .eq('user_id', user.id);
 
-      if (!memberData) return;
+      if (membershipError) {
+        console.error('Error loading memberships:', membershipError);
+        return;
+      }
+
+      if (!memberships || memberships.length === 0) return;
+
+      const membership = memberships[0];
 
       const [orgRes, membersRes, invitationsRes, permissionsRes] = await Promise.all([
-        supabase.from('organizations').select('*').eq('id', memberData.organization_id).single(),
-        supabase.from('organization_members').select('*').eq('organization_id', memberData.organization_id),
-        supabase.from('invitations').select('*').eq('organization_id', memberData.organization_id).eq('status', 'pending'),
-        supabase.from('resource_permissions').select('*').eq('organization_id', memberData.organization_id)
+        supabase.from('organizations').select('*').eq('id', membership.organization_id).single(),
+        supabase.from('organization_members').select('*').eq('organization_id', membership.organization_id),
+        supabase
+          .from('invitations')
+          .select('*')
+          .eq('organization_id', membership.organization_id)
+          .eq('status', 'pending'),
+        supabase
+          .from('resource_permissions')
+          .select('*')
+          .eq('organization_id', membership.organization_id)
       ]);
 
       if (orgRes.data) setOrganization(orgRes.data);
@@ -73,9 +86,11 @@ export default function TeamSettings() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      const normalizedEmail = inviteForm.email.trim().toLowerCase();
+
       const invitationPayload = {
         organization_id: organization.id,
-        email: inviteForm.email,
+        email: normalizedEmail,
         role: inviteForm.role,
         invited_by: user.id,
         status: 'pending' as const,
@@ -89,30 +104,7 @@ export default function TeamSettings() {
 
       if (error) throw error;
 
-      try {
-        const inviteLink = `${window.location.origin}/accept-invite?token=${invitationPayload.token}`;
-        const { error: emailError } = await supabase.functions.invoke('send-invite-email', {
-          body: {
-            email: inviteForm.email,
-            organizationName: organization.name,
-            role: inviteForm.role,
-            invitedByEmail: user.email,
-            inviteLink
-          }
-        });
-
-        if (emailError) {
-          console.error('Error sending invitation email via function:', emailError);
-          alert('Pozvánka byla uložena, ale e-mail se nepodařilo odeslat.');
-          return;
-        }
-      } catch (emailError) {
-        console.error('Error invoking invitation email function:', emailError);
-        alert('Pozvánka byla uložena, ale e-mail se nepodařilo odeslat.');
-        return;
-      }
-
-      alert('Pozvánka byla odeslána!');
+      alert('Pozvánka byla vytvořena! Uživatel ji uvidí po přihlášení.');
       setInviteForm({ email: '', role: 'member' });
       setShowInviteForm(false);
       loadData();
