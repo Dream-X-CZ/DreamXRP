@@ -73,6 +73,7 @@ export interface Employee {
 export interface Project {
   id: string;
   user_id: string;
+  organization_id?: string | null;
   name: string;
   description?: string;
   budget_id?: string;
@@ -84,6 +85,7 @@ export interface Project {
   notes?: string;
   created_at: string;
   updated_at: string;
+  client_hourly_rate?: number | null;
 }
 
 export interface Organization {

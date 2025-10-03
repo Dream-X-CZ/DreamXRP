@@ -14,9 +14,10 @@ import {
   Trash2,
   BarChart3,
   X
-
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ensureUserOrganization } from '../lib/organization';
+
 import type { Task, Project, Employee } from '../types/database';
 
 
@@ -87,6 +88,8 @@ export default function Tasks() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [formData, setFormData] = useState<TaskFormState>(initialFormState);
   const [saving, setSaving] = useState(false);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -103,15 +106,34 @@ export default function Tasks() {
     setError(null);
 
     try {
-      const [tasksRes, projectsRes, employeesRes] = await Promise.all([
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setTasks([]);
+        setProjects([]);
+        setEmployees([]);
+        setOrganizationId(null);
+        setError('Pro práci s úkoly musíte být přihlášeni.');
+        return;
+      }
+
+      const organizationPromise = ensureUserOrganization(user.id);
+
+      const [orgId, tasksRes, projectsRes, employeesRes] = await Promise.all([
+        organizationPromise,
         supabase.from('tasks').select('*').order('deadline', { ascending: true }),
-        supabase.from('projects').select('id, name').order('name'),
+        supabase.from('projects').select('id, name, organization_id').order('name'),
+
         supabase.from('employees').select('id, first_name, last_name, position').order('first_name')
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
       if (projectsRes.error) throw projectsRes.error;
       if (employeesRes.error) throw employeesRes.error;
+
+      setOrganizationId(orgId);
 
       setTasks(tasksRes.data || []);
       setProjects(projectsRes.data || []);
@@ -216,6 +238,37 @@ export default function Tasks() {
         setSaving(false);
         return;
       }
+
+      let activeOrganizationId = organizationId;
+      if (!activeOrganizationId) {
+        activeOrganizationId = await ensureUserOrganization(user.id);
+        setOrganizationId(activeOrganizationId);
+      }
+
+      const selectedProject = projects.find(project => project.id === formData.project_id);
+      if (!selectedProject) {
+        setError('Vybraný projekt se nepodařilo najít.');
+        setSaving(false);
+        return;
+      }
+
+      if (!selectedProject.organization_id) {
+        const { error: projectUpdateError } = await supabase
+          .from('projects')
+          .update({ organization_id: activeOrganizationId })
+          .eq('id', selectedProject.id);
+
+        if (projectUpdateError) throw projectUpdateError;
+
+        setProjects(prev =>
+          prev.map(project =>
+            project.id === selectedProject.id
+              ? { ...project, organization_id: activeOrganizationId }
+              : project
+          )
+        );
+      }
+
 
       const payload = {
         title: formData.title.trim(),

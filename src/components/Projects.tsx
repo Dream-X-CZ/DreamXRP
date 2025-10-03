@@ -20,6 +20,7 @@ import {
 
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ensureUserOrganization } from '../lib/organization';
 import { Project, Budget } from '../types/database';
 import ProjectDetails from './ProjectDetails';
 
@@ -29,6 +30,7 @@ export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -55,8 +57,24 @@ export default function Projects() {
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
+
     try {
-      const [projectsRes, budgetsRes] = await Promise.all([
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setProjects([]);
+        setBudgets([]);
+        setOrganizationId(null);
+        return;
+      }
+
+      const organizationPromise = ensureUserOrganization(user.id);
+
+      const [orgId, projectsRes, budgetsRes] = await Promise.all([
+        organizationPromise,
         supabase.from('projects').select('*').order('created_at', { ascending: false }),
         supabase.from('budgets').select('*').order('name')
       ]);
@@ -64,6 +82,7 @@ export default function Projects() {
       if (projectsRes.error) throw projectsRes.error;
       if (budgetsRes.error) throw budgetsRes.error;
 
+      setOrganizationId(orgId);
       setProjects(projectsRes.data || []);
       setBudgets(budgetsRes.data || []);
     } catch (error) {
@@ -85,12 +104,19 @@ export default function Projects() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      let orgId = organizationId;
+      if (!orgId) {
+        orgId = await ensureUserOrganization(user.id);
+        setOrganizationId(orgId);
+      }
+
       const projectData = {
         ...formData,
         budget_id: formData.budget_id || null,
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
-        user_id: user.id
+        user_id: user.id,
+        organization_id: orgId
       };
 
       if (editingProject) {
