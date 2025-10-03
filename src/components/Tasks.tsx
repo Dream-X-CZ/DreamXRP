@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import {
   Plus,
   Search,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
+
 import type { Task, Project, Employee } from '../types/database';
 
 
@@ -88,6 +90,7 @@ export default function Tasks() {
   const [saving, setSaving] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
 
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
@@ -122,6 +125,7 @@ export default function Tasks() {
         organizationPromise,
         supabase.from('tasks').select('*').order('deadline', { ascending: true }),
         supabase.from('projects').select('id, name, organization_id').order('name'),
+
         supabase.from('employees').select('id, first_name, last_name, position').order('first_name')
       ]);
 
@@ -130,6 +134,7 @@ export default function Tasks() {
       if (employeesRes.error) throw employeesRes.error;
 
       setOrganizationId(orgId);
+
       setTasks(tasksRes.data || []);
       setProjects(projectsRes.data || []);
       setEmployees(employeesRes.data || []);
@@ -150,6 +155,7 @@ export default function Tasks() {
     setShowForm(false);
     resetForm();
   }, [resetForm]);
+
 
   const handleCreateNew = () => {
     resetForm();
@@ -263,6 +269,7 @@ export default function Tasks() {
         );
       }
 
+
       const payload = {
         title: formData.title.trim(),
         description: formData.description.trim() || null,
@@ -301,6 +308,7 @@ export default function Tasks() {
 
       await loadData();
       handleCloseForm();
+
     } catch (err: any) {
       console.error('Error saving task:', err);
       setError('Úkol se nepodařilo uložit. Zkontrolujte prosím zadané údaje.');
@@ -335,6 +343,7 @@ export default function Tasks() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showForm, handleCloseForm]);
+
 
   const projectMap = useMemo(() => {
     const map = new Map<string, Project>();
@@ -530,6 +539,7 @@ export default function Tasks() {
           </div>
       )
       }
+
 
         {loading ? (
           <div className="text-center py-16 text-slate-500">Načítání úkolů...</div>
@@ -820,6 +830,7 @@ export default function Tasks() {
           </section>
         </div>
         ) : null}
+
     </div>
   );
 }
