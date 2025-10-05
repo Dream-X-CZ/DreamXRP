@@ -187,16 +187,24 @@ function App() {
     try {
       setProcessingInviteId(invitationId);
 
-      await supabase.from('organization_members').insert({
+      const { error: insertError } = await supabase.from('organization_members').insert({
         organization_id: invitation.organization_id,
         user_id: session.user.id,
         role: invitation.role
       });
 
-      await supabase
+      if (insertError && insertError.code !== '23505') {
+        throw insertError;
+      }
+
+      const { error: updateError } = await supabase
         .from('invitations')
         .update({ status: 'accepted' })
         .eq('id', invitationId);
+
+      if (updateError) {
+        throw updateError;
+      }
 
       const remainingInvites = pendingInvitations.filter(inv => inv.id !== invitationId);
       setPendingInvitations(remainingInvites);
@@ -220,10 +228,14 @@ function App() {
     try {
       setProcessingInviteId(invitationId);
 
-      await supabase
+      const { error: updateError } = await supabase
         .from('invitations')
         .update({ status: 'declined' })
         .eq('id', invitationId);
+
+      if (updateError) {
+        throw updateError;
+      }
 
       const remainingInvites = pendingInvitations.filter(inv => inv.id !== invitationId);
       setPendingInvitations(remainingInvites);
