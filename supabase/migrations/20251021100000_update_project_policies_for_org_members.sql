@@ -5,6 +5,7 @@ BEGIN
   DROP POLICY IF EXISTS "Users can insert own projects" ON projects;
   DROP POLICY IF EXISTS "Users can update own projects" ON projects;
   DROP POLICY IF EXISTS "Users can delete own projects" ON projects;
+
 END $$;
 
 CREATE POLICY "Organization members can view projects"
