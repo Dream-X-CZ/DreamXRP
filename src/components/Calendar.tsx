@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -6,112 +7,291 @@ import {
   EllipsisHorizontalIcon
 } from '@heroicons/react/20/solid';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import { supabase } from '../lib/supabase';
+import { ensureUserOrganization } from '../lib/organization';
+import type { CalendarEvent } from '../types/database';
 
-const events = [
-  { id: 1, name: 'Maple syrup museum', time: '3PM', datetime: '2022-01-15T09:00', href: '#' },
-  { id: 2, name: 'Hockey game', time: '7PM', datetime: '2022-01-22T19:00', href: '#' }
+interface CalendarProps {
+  activeOrganizationId: string | null;
+}
+
+type DayCell = {
+  date: string;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  isSelected: boolean;
+  events: CalendarEvent[];
+};
+
+const WEEKDAY_LABELS = [
+  { short: 'M', long: 'on' },
+  { short: 'T', long: 'ue' },
+  { short: 'W', long: 'ed' },
+  { short: 'T', long: 'hu' },
+  { short: 'F', long: 'ri' },
+  { short: 'S', long: 'at' },
+  { short: 'S', long: 'un' }
 ];
 
-const days = [
-  { date: '2021-12-27', events: [] },
-  { date: '2021-12-28', events: [] },
-  { date: '2021-12-29', events: [] },
-  { date: '2021-12-30', events: [] },
-  { date: '2021-12-31', events: [] },
-  { date: '2022-01-01', isCurrentMonth: true, events: [] },
-  { date: '2022-01-02', isCurrentMonth: true, events: [] },
-  {
-    date: '2022-01-03',
-    isCurrentMonth: true,
-    events: [
-      { id: 1, name: 'Design review', time: '10AM', datetime: '2022-01-03T10:00', href: '#' },
-      { id: 2, name: 'Sales meeting', time: '2PM', datetime: '2022-01-03T14:00', href: '#' }
-    ]
-  },
-  { date: '2022-01-04', isCurrentMonth: true, events: [] },
-  { date: '2022-01-05', isCurrentMonth: true, events: [] },
-  { date: '2022-01-06', isCurrentMonth: true, events: [] },
-  {
-    date: '2022-01-07',
-    isCurrentMonth: true,
-    events: [{ id: 3, name: 'Date night', time: '6PM', datetime: '2022-01-08T18:00', href: '#' }]
-  },
-  { date: '2022-01-08', isCurrentMonth: true, events: [] },
-  { date: '2022-01-09', isCurrentMonth: true, events: [] },
-  { date: '2022-01-10', isCurrentMonth: true, events: [] },
-  { date: '2022-01-11', isCurrentMonth: true, events: [] },
-  {
-    date: '2022-01-12',
-    isCurrentMonth: true,
-    isToday: true,
-    events: [{ id: 6, name: "Sam's birthday party", time: '2PM', datetime: '2022-01-25T14:00', href: '#' }]
-  },
-  { date: '2022-01-13', isCurrentMonth: true, events: [] },
-  { date: '2022-01-14', isCurrentMonth: true, events: [] },
-  { date: '2022-01-15', isCurrentMonth: true, events: [] },
-  { date: '2022-01-16', isCurrentMonth: true, events: [] },
-  { date: '2022-01-17', isCurrentMonth: true, events: [] },
-  { date: '2022-01-18', isCurrentMonth: true, events: [] },
-  { date: '2022-01-19', isCurrentMonth: true, events: [] },
-  { date: '2022-01-20', isCurrentMonth: true, events: [] },
-  { date: '2022-01-21', isCurrentMonth: true, events: [] },
-  {
-    date: '2022-01-22',
-    isCurrentMonth: true,
-    isSelected: true,
-    events: [
-      { id: 4, name: 'Maple syrup museum', time: '3PM', datetime: '2022-01-22T15:00', href: '#' },
-      { id: 5, name: 'Hockey game', time: '7PM', datetime: '2022-01-22T19:00', href: '#' }
-    ]
-  },
-  { date: '2022-01-23', isCurrentMonth: true, events: [] },
-  { date: '2022-01-24', isCurrentMonth: true, events: [] },
-  { date: '2022-01-25', isCurrentMonth: true, events: [] },
-  { date: '2022-01-26', isCurrentMonth: true, events: [] },
-  { date: '2022-01-27', isCurrentMonth: true, events: [] },
-  { date: '2022-01-28', isCurrentMonth: true, events: [] },
-  { date: '2022-01-29', isCurrentMonth: true, events: [] },
-  { date: '2022-01-30', isCurrentMonth: true, events: [] },
-  { date: '2022-01-31', isCurrentMonth: true, events: [] },
-  { date: '2022-02-01', events: [] },
-  { date: '2022-02-02', events: [] },
-  { date: '2022-02-03', events: [] },
-  {
-    date: '2022-02-04',
-    events: [{ id: 7, name: 'Cinema with friends', time: '9PM', datetime: '2022-02-04T21:00', href: '#' }]
-  },
-  { date: '2022-02-05', events: [] },
-  { date: '2022-02-06', events: [] }
-];
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
-export default function Calendar() {
+function parseDateKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
+}
+
+function toTitleCase(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+export default function Calendar({ activeOrganizationId }: CalendarProps) {
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const todayKey = useMemo(() => formatDateKey(new Date()), []);
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const monthFormatter = useMemo(
+    () => new Intl.DateTimeFormat('cs-CZ', { month: 'long', year: 'numeric' }),
+    []
+  );
+  const dayDetailFormatter = useMemo(
+    () => new Intl.DateTimeFormat('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' }),
+    []
+  );
+  const timeFormatter = useMemo(
+    () => new Intl.DateTimeFormat('cs-CZ', { hour: '2-digit', minute: '2-digit' }),
+    []
+  );
+
+  const calendarRange = useMemo(() => {
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const startDay = (startOfMonth.getDay() + 6) % 7;
+    const rangeStart = new Date(startOfMonth);
+    rangeStart.setDate(startOfMonth.getDate() - startDay);
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+    const totalDays = endOfMonth.getDate();
+    const totalCells = Math.ceil((startDay + totalDays) / 7) * 7;
+    const rangeEnd = new Date(rangeStart);
+    rangeEnd.setDate(rangeStart.getDate() + totalCells);
+
+    return { rangeStart, rangeEnd, totalCells };
+  }, [currentDate]);
+
+  const rangeStartTime = calendarRange.rangeStart.getTime();
+  const rangeEndTime = calendarRange.rangeEnd.getTime();
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadEvents = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const {
+          data: { user }
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          if (isActive) {
+            setEvents([]);
+          }
+          return;
+        }
+
+        const organizationId = await ensureUserOrganization(user.id, activeOrganizationId);
+        if (!isActive) return;
+
+        const startISO = new Date(rangeStartTime).toISOString();
+        const endISO = new Date(rangeEndTime).toISOString();
+
+        const { data, error: eventsError } = await supabase
+          .from('calendar_events')
+          .select(
+            'id, organization_id, title, description, start_at, end_at, type, task_id, created_at, updated_at'
+          )
+          .eq('organization_id', organizationId)
+          .gte('start_at', startISO)
+          .lt('start_at', endISO)
+          .order('start_at', { ascending: true })
+          .returns<CalendarEvent[]>();
+
+        if (eventsError) {
+          throw eventsError;
+        }
+
+        if (isActive) {
+          setEvents(data ?? []);
+        }
+      } catch (err) {
+        console.error('Error loading calendar events:', err);
+        if (isActive) {
+          setError('Nepodařilo se načíst události kalendáře.');
+          setEvents([]);
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadEvents();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeOrganizationId, rangeStartTime, rangeEndTime]);
+
+  useEffect(() => {
+    setSelectedDate(prev => {
+      const fallback = formatDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+
+      if (!prev) {
+        return fallback;
+      }
+
+      const previousDate = parseDateKey(prev);
+
+      if (
+        previousDate.getFullYear() === currentDate.getFullYear() &&
+        previousDate.getMonth() === currentDate.getMonth()
+      ) {
+        return prev;
+      }
+
+      return fallback;
+    });
+  }, [currentDate]);
+
+  const eventsByDate = useMemo(() => {
+    const grouped: Record<string, CalendarEvent[]> = {};
+
+    events.forEach(event => {
+      const dateKey = formatDateKey(new Date(event.start_at));
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(event);
+    });
+
+    Object.values(grouped).forEach(list => {
+      list.sort(
+        (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+      );
+    });
+
+    return grouped;
+  }, [events]);
+
+  const days: DayCell[] = useMemo(() => {
+    const dayCells: DayCell[] = [];
+
+    for (let i = 0; i < calendarRange.totalCells; i += 1) {
+      const dayDate = new Date(calendarRange.rangeStart);
+      dayDate.setDate(calendarRange.rangeStart.getDate() + i);
+      const dateKey = formatDateKey(dayDate);
+
+      dayCells.push({
+        date: dateKey,
+        isCurrentMonth: dayDate.getMonth() === currentDate.getMonth(),
+        isToday: dateKey === todayKey,
+        isSelected: dateKey === selectedDate,
+        events: eventsByDate[dateKey] ?? []
+      });
+    }
+
+    return dayCells;
+  }, [calendarRange, currentDate, eventsByDate, selectedDate, todayKey]);
+
+  const selectedEvents = useMemo(
+    () => (eventsByDate[selectedDate] ? [...eventsByDate[selectedDate]] : []),
+    [eventsByDate, selectedDate]
+  );
+
+  const currentMonthLabel = useMemo(
+    () => toTitleCase(monthFormatter.format(currentDate)),
+    [currentDate, monthFormatter]
+  );
+
+  const currentMonthValue = useMemo(
+    () => `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`,
+    [currentDate]
+  );
+
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDate) return '';
+    const label = dayDetailFormatter.format(parseDateKey(selectedDate));
+    return toTitleCase(label);
+  }, [dayDetailFormatter, selectedDate]);
+
+  const formatTime = (isoString: string) => timeFormatter.format(new Date(isoString));
+
+  const formatEventTimeRange = (event: CalendarEvent) => {
+    const start = timeFormatter.format(new Date(event.start_at));
+    const end = timeFormatter.format(new Date(event.end_at));
+    return `${start} – ${end}`;
+  };
+
+  const handlePreviousMonth = () => {
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const handleToday = () => {
+    const now = new Date();
+    setCurrentDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    setSelectedDate(formatDateKey(now));
+  };
+
+  const handleSelectDate = (dateKey: string) => {
+    setSelectedDate(dateKey);
+  };
+
   return (
     <div className="lg:flex lg:h-full lg:flex-col">
       <header className="flex items-center justify-between border-b border-gray-200 px-6 py-4 lg:flex-none">
         <h1 className="text-base font-semibold text-gray-900">
-          <time dateTime="2022-01">January 2022</time>
+          <time dateTime={currentMonthValue}>{currentMonthLabel}</time>
         </h1>
         <div className="flex items-center">
           <div className="relative flex items-center rounded-md bg-white shadow-xs outline -outline-offset-1 outline-gray-300 md:items-stretch">
             <button
               type="button"
+              onClick={handlePreviousMonth}
               className="flex h-9 w-12 items-center justify-center rounded-l-md pr-1 text-gray-400 hover:text-gray-500 focus:relative md:w-9 md:pr-0 md:hover:bg-gray-50"
             >
-              <span className="sr-only">Previous month</span>
+              <span className="sr-only">Předchozí měsíc</span>
               <ChevronLeftIcon aria-hidden="true" className="size-5" />
             </button>
             <button
               type="button"
+              onClick={handleToday}
               className="hidden px-3.5 text-sm font-semibold text-gray-900 hover:bg-gray-50 focus:relative md:block"
             >
-              Today
+              Dnes
             </button>
             <span className="relative -mx-px h-5 w-px bg-gray-300 md:hidden" />
             <button
               type="button"
+              onClick={handleNextMonth}
               className="flex h-9 w-12 items-center justify-center rounded-r-md pl-1 text-gray-400 hover:text-gray-500 focus:relative md:w-9 md:pl-0 md:hover:bg-gray-50"
             >
-              <span className="sr-only">Next month</span>
+              <span className="sr-only">Další měsíc</span>
               <ChevronRightIcon aria-hidden="true" className="size-5" />
             </button>
           </div>
@@ -121,7 +301,7 @@ export default function Calendar() {
                 type="button"
                 className="flex items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring inset-ring-gray-300 hover:bg-gray-50"
               >
-                Month view
+                Měsíční přehled
                 <ChevronDownIcon aria-hidden="true" className="-mr-1 size-5 text-gray-400" />
               </MenuButton>
 
@@ -131,36 +311,24 @@ export default function Calendar() {
               >
                 <div className="py-1">
                   <MenuItem>
-                    <a
-                      href="#"
-                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                    >
-                      Day view
-                    </a>
+                    <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                      Denní přehled
+                    </span>
                   </MenuItem>
                   <MenuItem>
-                    <a
-                      href="#"
-                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                    >
-                      Week view
-                    </a>
+                    <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                      Týdenní přehled
+                    </span>
                   </MenuItem>
                   <MenuItem>
-                    <a
-                      href="#"
-                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                    >
-                      Month view
-                    </a>
+                    <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                      Měsíční přehled
+                    </span>
                   </MenuItem>
                   <MenuItem>
-                    <a
-                      href="#"
-                      className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                    >
-                      Year view
-                    </a>
+                    <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                      Roční přehled
+                    </span>
                   </MenuItem>
                 </div>
               </MenuItems>
@@ -170,12 +338,13 @@ export default function Calendar() {
               type="button"
               className="ml-6 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
             >
-              Add event
+              Přidat událost
             </button>
+            {loading && <span className="ml-4 text-sm text-gray-500">Načítání…</span>}
           </div>
           <Menu as="div" className="relative ml-6 md:hidden">
             <MenuButton className="-mx-2 flex items-center rounded-full border border-transparent p-2 text-gray-400 hover:text-gray-500">
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">Otevřít menu</span>
               <EllipsisHorizontalIcon aria-hidden="true" className="size-5" />
             </MenuButton>
 
@@ -185,92 +354,59 @@ export default function Calendar() {
             >
               <div className="py-1">
                 <MenuItem>
-                  <a
-                    href="#"
-                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                  >
-                    Create event
-                  </a>
+                  <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                    Vytvořit událost
+                  </span>
                 </MenuItem>
               </div>
               <div className="py-1">
                 <MenuItem>
-                  <a
-                    href="#"
-                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+                  <button
+                    type="button"
+                    onClick={handleToday}
+                    className="block w-full px-4 py-2 text-left text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
                   >
-                    Go to today
-                  </a>
+                    Přejít na dnešek
+                  </button>
                 </MenuItem>
               </div>
               <div className="py-1">
                 <MenuItem>
-                  <a
-                    href="#"
-                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                  >
-                    Day view
-                  </a>
+                  <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                    Denní přehled
+                  </span>
                 </MenuItem>
                 <MenuItem>
-                  <a
-                    href="#"
-                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                  >
-                    Week view
-                  </a>
+                  <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                    Týdenní přehled
+                  </span>
                 </MenuItem>
                 <MenuItem>
-                  <a
-                    href="#"
-                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                  >
-                    Month view
-                  </a>
+                  <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                    Měsíční přehled
+                  </span>
                 </MenuItem>
                 <MenuItem>
-                  <a
-                    href="#"
-                    className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
-                  >
-                    Year view
-                  </a>
+                  <span className="block px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden">
+                    Roční přehled
+                  </span>
                 </MenuItem>
               </div>
             </MenuItems>
           </Menu>
         </div>
       </header>
+      {error && (
+        <div className="px-6 py-2 text-sm text-red-600">{error}</div>
+      )}
       <div className="shadow-sm ring-1 ring-black/5 lg:flex lg:flex-auto lg:flex-col">
         <div className="grid grid-cols-7 gap-px border-b border-gray-300 bg-gray-200 text-center text-xs/6 font-semibold text-gray-700 lg:flex-none">
-          <div className="flex justify-center bg-white py-2">
-            <span>M</span>
-            <span className="sr-only sm:not-sr-only">on</span>
-          </div>
-          <div className="flex justify-center bg-white py-2">
-            <span>T</span>
-            <span className="sr-only sm:not-sr-only">ue</span>
-          </div>
-          <div className="flex justify-center bg-white py-2">
-            <span>W</span>
-            <span className="sr-only sm:not-sr-only">ed</span>
-          </div>
-          <div className="flex justify-center bg-white py-2">
-            <span>T</span>
-            <span className="sr-only sm:not-sr-only">hu</span>
-          </div>
-          <div className="flex justify-center bg-white py-2">
-            <span>F</span>
-            <span className="sr-only sm:not-sr-only">ri</span>
-          </div>
-          <div className="flex justify-center bg-white py-2">
-            <span>S</span>
-            <span className="sr-only sm:not-sr-only">at</span>
-          </div>
-          <div className="flex justify-center bg-white py-2">
-            <span>S</span>
-            <span className="sr-only sm:not-sr-only">un</span>
-          </div>
+          {WEEKDAY_LABELS.map(day => (
+            <div key={day.long} className="flex justify-center bg-white py-2">
+              <span>{day.short}</span>
+              <span className="sr-only sm:not-sr-only">{day.long}</span>
+            </div>
+          ))}
         </div>
         <div className="flex bg-gray-200 text-xs/6 text-gray-700 lg:flex-auto">
           <div className="hidden w-full lg:grid lg:grid-cols-7 lg:grid-rows-6 lg:gap-px">
@@ -285,26 +421,28 @@ export default function Calendar() {
                   dateTime={day.date}
                   className="relative group-not-data-is-current-month:opacity-75 in-data-is-today:flex in-data-is-today:size-6 in-data-is-today:items-center in-data-is-today:justify-center in-data-is-today:rounded-full in-data-is-today:bg-indigo-600 in-data-is-today:font-semibold in-data-is-today:text-white"
                 >
-                  {day.date.split('-').pop()?.replace(/^0/, '')}
+                  {Number(day.date.split('-')[2])}
                 </time>
                 {day.events.length > 0 ? (
                   <ol className="mt-2">
                     {day.events.slice(0, 2).map(event => (
                       <li key={event.id}>
-                        <a href={event.href} className="group flex">
+                        <div className="group flex">
                           <p className="flex-auto truncate font-medium text-gray-900 group-hover:text-indigo-600">
-                            {event.name}
+                            {event.title}
                           </p>
                           <time
-                            dateTime={event.datetime}
+                            dateTime={event.start_at}
                             className="ml-3 hidden flex-none text-gray-500 group-hover:text-indigo-600 xl:block"
                           >
-                            {event.time}
+                            {formatTime(event.start_at)}
                           </time>
-                        </a>
+                        </div>
                       </li>
                     ))}
-                    {day.events.length > 2 ? <li className="text-gray-500">+ {day.events.length - 2} more</li> : null}
+                    {day.events.length > 2 ? (
+                      <li className="text-gray-500">+ {day.events.length - 2} dalších</li>
+                    ) : null}
                   </ol>
                 ) : null}
               </div>
@@ -315,6 +453,7 @@ export default function Calendar() {
               <button
                 key={day.date}
                 type="button"
+                onClick={() => handleSelectDate(day.date)}
                 data-is-today={day.isToday ? '' : undefined}
                 data-is-selected={day.isSelected ? '' : undefined}
                 data-is-current-month={day.isCurrentMonth ? '' : undefined}
@@ -324,9 +463,9 @@ export default function Calendar() {
                   dateTime={day.date}
                   className="ml-auto group-not-data-is-current-month:opacity-75 in-data-is-selected:flex in-data-is-selected:size-6 in-data-is-selected:items-center in-data-is-selected:justify-center in-data-is-selected:rounded-full in-data-is-selected:not-in-data-is-today:bg-gray-900 in-data-is-selected:in-data-is-today:bg-indigo-600"
                 >
-                  {day.date.split('-').pop()?.replace(/^0/, '')}
+                  {Number(day.date.split('-')[2])}
                 </time>
-                <span className="sr-only">{day.events.length} events</span>
+                <span className="sr-only">{day.events.length} událostí</span>
                 {day.events.length > 0 ? (
                   <span className="-mx-0.5 mt-auto flex flex-wrap-reverse">
                     {day.events.map(event => (
@@ -340,24 +479,28 @@ export default function Calendar() {
         </div>
       </div>
       <div className="relative px-4 py-10 sm:px-6 lg:hidden">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-900">{selectedDateLabel || 'Vyberte den'}</h2>
+          {loading && <span className="text-xs text-gray-500">Načítání…</span>}
+        </div>
         <ol className="divide-y divide-gray-100 overflow-hidden rounded-lg bg-white text-sm shadow-sm outline-1 outline-black/5">
-          {events.map(event => (
-            <li key={event.id} className="group flex p-4 pr-6 focus-within:bg-gray-50 hover:bg-gray-50">
-              <div className="flex-auto">
-                <p className="font-semibold text-gray-900">{event.name}</p>
-                <time dateTime={event.datetime} className="mt-2 flex items-center text-gray-700">
-                  <ClockIcon aria-hidden="true" className="mr-2 size-5 text-gray-400" />
-                  {event.time}
-                </time>
-              </div>
-              <a
-                href={event.href}
-                className="ml-6 flex-none self-center rounded-md bg-white px-3 py-2 font-semibold text-gray-900 opacity-0 shadow-xs ring-1 ring-gray-300 ring-inset group-hover:opacity-100 hover:ring-gray-400 focus:opacity-100"
-              >
-                Edit<span className="sr-only">, {event.name}</span>
-              </a>
+          {selectedEvents.length > 0 ? (
+            selectedEvents.map(event => (
+              <li key={event.id} className="group flex p-4 pr-6 focus-within:bg-gray-50 hover:bg-gray-50">
+                <div className="flex-auto">
+                  <p className="font-semibold text-gray-900">{event.title}</p>
+                  <time dateTime={event.start_at} className="mt-2 flex items-center text-gray-700">
+                    <ClockIcon aria-hidden="true" className="mr-2 size-5 text-gray-400" />
+                    {formatEventTimeRange(event)}
+                  </time>
+                </div>
+              </li>
+            ))
+          ) : (
+            <li className="p-4 text-center text-sm text-gray-600">
+              {loading ? 'Načítání událostí…' : 'Žádné události pro vybraný den.'}
             </li>
-          ))}
+          )}
         </ol>
       </div>
     </div>

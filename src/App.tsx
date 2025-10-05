@@ -356,7 +356,9 @@ function App() {
         <Tasks key={`tasks-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
       )}
 
-      {currentView === 'calendar' && <Calendar key={`calendar-${activeOrganizationId ?? 'none'}`} />}
+      {currentView === 'calendar' && (
+        <Calendar key={`calendar-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
       {currentView === 'team' && (
         <TeamSettings
