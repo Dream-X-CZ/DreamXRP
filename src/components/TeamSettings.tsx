@@ -1,8 +1,46 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { Plus, UserPlus, Trash2, Mail, Shield, Eye, CreditCard as Edit, X, Check } from 'lucide-react';
+import { UserPlus, Trash2, Mail, Shield, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { OrganizationMember, Invitation, ResourcePermission, Organization } from '../types/database';
 import { getStoredActiveOrganizationId } from '../lib/organization';
+
+type PermissionKey = ResourcePermission['resource_type'];
+
+type PermissionValues = {
+  can_view: boolean;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+};
+
+type PermissionsFormState = Record<PermissionKey, PermissionValues>;
+
+const resourceSections: { key: PermissionKey; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'budgets', label: 'Rozpočty' },
+  { key: 'expenses', label: 'Náklady' },
+  { key: 'analytics', label: 'Analytika' },
+  { key: 'employees', label: 'Zaměstnanci' },
+  { key: 'projects', label: 'Projekty' },
+  { key: 'tasks', label: 'Úkoly' },
+  { key: 'calendar', label: 'Kalendář' },
+  { key: 'profile', label: 'Profil' },
+  { key: 'profile-settings', label: 'Nastavení profilu' },
+  { key: 'team', label: 'Tým' }
+];
+
+const defaultPermissionValues: PermissionValues = {
+  can_view: true,
+  can_create: false,
+  can_edit: false,
+  can_delete: false
+};
+
+const createDefaultPermissionsForm = (): PermissionsFormState =>
+  resourceSections.reduce((acc, section) => {
+    acc[section.key] = { ...defaultPermissionValues };
+    return acc;
+  }, {} as PermissionsFormState);
 
 interface TeamSettingsProps {
   activeOrganizationId: string | null;
@@ -30,13 +68,7 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
     role: 'member' as 'admin' | 'member' | 'viewer'
   });
 
-  const [permissionsForm, setPermissionsForm] = useState({
-    budgets: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-    projects: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-    expenses: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-    employees: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-    analytics: { can_view: true, can_create: false, can_edit: false, can_delete: false }
-  });
+  const [permissionsForm, setPermissionsForm] = useState<PermissionsFormState>(() => createDefaultPermissionsForm());
 
   useEffect(() => {
     loadData();
@@ -250,21 +282,18 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
     setSelectedMember(member);
 
     const memberPermissions = permissions.filter(p => p.user_id === member.user_id);
-    const newPermissionsForm: any = {
-      budgets: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-      projects: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-      expenses: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-      employees: { can_view: true, can_create: false, can_edit: false, can_delete: false },
-      analytics: { can_view: true, can_create: false, can_edit: false, can_delete: false }
-    };
+    const newPermissionsForm = createDefaultPermissionsForm();
 
     memberPermissions.forEach(perm => {
-      newPermissionsForm[perm.resource_type] = {
-        can_view: perm.can_view,
-        can_create: perm.can_create,
-        can_edit: perm.can_edit,
-        can_delete: perm.can_delete
-      };
+      if (perm.resource_type in newPermissionsForm) {
+        const resourceKey = perm.resource_type as PermissionKey;
+        newPermissionsForm[resourceKey] = {
+          can_view: perm.can_view,
+          can_create: perm.can_create,
+          can_edit: perm.can_edit,
+          can_delete: perm.can_delete
+        };
+      }
     });
 
     setPermissionsForm(newPermissionsForm);
@@ -558,18 +587,22 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
             </div>
 
             <div className="p-6 space-y-4">
-              {Object.entries(permissionsForm).map(([resource, perms]) => (
-                <div key={resource} className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-3 capitalize">{resource}</h4>
+              {resourceSections.map(({ key, label }) => {
+                const perms = permissionsForm[key];
+                return (
+                  <div key={key} className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-medium text-gray-900 mb-3">{label}</h4>
                   <div className="grid grid-cols-4 gap-4">
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={perms.can_view}
-                        onChange={(e) => setPermissionsForm({
-                          ...permissionsForm,
-                          [resource]: { ...perms, can_view: e.target.checked }
-                        })}
+                        checked={perms?.can_view}
+                        onChange={(e) =>
+                          setPermissionsForm(prev => ({
+                            ...prev,
+                            [key]: { ...prev[key], can_view: e.target.checked }
+                          }))
+                        }
                         className="w-4 h-4 text-[#0a192f] border-gray-300 rounded focus:ring-[#0a192f]"
                       />
                       <span className="text-sm text-gray-700">Zobrazit</span>
@@ -577,11 +610,13 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={perms.can_create}
-                        onChange={(e) => setPermissionsForm({
-                          ...permissionsForm,
-                          [resource]: { ...perms, can_create: e.target.checked }
-                        })}
+                        checked={perms?.can_create}
+                        onChange={(e) =>
+                          setPermissionsForm(prev => ({
+                            ...prev,
+                            [key]: { ...prev[key], can_create: e.target.checked }
+                          }))
+                        }
                         className="w-4 h-4 text-[#0a192f] border-gray-300 rounded focus:ring-[#0a192f]"
                       />
                       <span className="text-sm text-gray-700">Vytvořit</span>
@@ -589,11 +624,13 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={perms.can_edit}
-                        onChange={(e) => setPermissionsForm({
-                          ...permissionsForm,
-                          [resource]: { ...perms, can_edit: e.target.checked }
-                        })}
+                        checked={perms?.can_edit}
+                        onChange={(e) =>
+                          setPermissionsForm(prev => ({
+                            ...prev,
+                            [key]: { ...prev[key], can_edit: e.target.checked }
+                          }))
+                        }
                         className="w-4 h-4 text-[#0a192f] border-gray-300 rounded focus:ring-[#0a192f]"
                       />
                       <span className="text-sm text-gray-700">Upravit</span>
@@ -601,18 +638,21 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={perms.can_delete}
-                        onChange={(e) => setPermissionsForm({
-                          ...permissionsForm,
-                          [resource]: { ...perms, can_delete: e.target.checked }
-                        })}
+                        checked={perms?.can_delete}
+                        onChange={(e) =>
+                          setPermissionsForm(prev => ({
+                            ...prev,
+                            [key]: { ...prev[key], can_delete: e.target.checked }
+                          }))
+                        }
                         className="w-4 h-4 text-[#0a192f] border-gray-300 rounded focus:ring-[#0a192f]"
                       />
                       <span className="text-sm text-gray-700">Smazat</span>
                     </label>
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="p-6 border-t border-gray-200 flex gap-3">
