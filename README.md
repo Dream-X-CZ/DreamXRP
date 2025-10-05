@@ -1,5 +1,10 @@
 DreamXRP
 
+## Local development setup
+
+1. Duplicate `.env.example` and rename it to `.env`.
+2. Fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the credentials from your Supabase project.
+
 ## Konfigurace e-mailových pozvánek
 
 Pro odesílání e-mailových pozvánek je nutné nasadit Supabase Edge Function `send-invite-email` a nastavit následující proměnné prostředí:
