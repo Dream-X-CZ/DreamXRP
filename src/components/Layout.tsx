@@ -100,12 +100,6 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               onClick={() => onViewChange('calendar')}
             />
             <SidebarButton
-              icon={UserCircle}
-              label="Profil"
-              isActive={currentView === 'profile'}
-              onClick={() => onViewChange('profile')}
-            />
-            <SidebarButton
               icon={UserCog}
               label="Nastavení profilu"
               isActive={currentView === 'profile-settings'}
@@ -130,8 +124,25 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
           </div>
         </aside>
 
-        <main className="flex-1 px-6 lg:px-10 py-8">
-          <div className="max-w-6xl mx-auto">{children}</div>
+        <main className="flex-1 flex flex-col">
+          <header className="px-6 lg:px-10 py-4 border-b border-gray-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+            <div className="max-w-6xl mx-auto flex items-center justify-end">
+              <button
+                onClick={() => onViewChange('profile')}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  currentView === 'profile'
+                    ? 'bg-[#0a192f] text-white shadow'
+                    : 'bg-white text-[#0a192f] border border-[#0a192f]/10 hover:border-[#0a192f]/30'
+                }`}
+              >
+                <UserCircle className="h-5 w-5" />
+                <span>Profil</span>
+              </button>
+            </div>
+          </header>
+          <div className="flex-1 px-6 lg:px-10 py-8">
+            <div className="max-w-6xl mx-auto">{children}</div>
+          </div>
         </main>
       </div>
     </div>
