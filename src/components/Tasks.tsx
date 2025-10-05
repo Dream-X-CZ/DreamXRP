@@ -137,24 +137,45 @@ export default function Tasks({ activeOrganizationId }: TasksProps) {
         return;
       }
 
-      const organizationPromise = ensureUserOrganization(user.id, activeOrganizationId);
+      const orgId = await ensureUserOrganization(user.id, activeOrganizationId);
 
-      const [orgId, tasksRes, projectsRes, employeesRes] = await Promise.all([
-        organizationPromise,
-        supabase.from('tasks').select('*').order('deadline', { ascending: true }),
-        supabase.from('projects').select('id, name, organization_id').order('name'),
-
-        supabase.from('employees').select('id, first_name, last_name, position').order('first_name')
+      const [projectsRes, employeesRes] = await Promise.all([
+        supabase
+          .from('projects')
+          .select('id, name, organization_id')
+          .eq('organization_id', orgId)
+          .order('name'),
+        supabase
+          .from('employees')
+          .select('id, first_name, last_name, position')
+          .eq('organization_id', orgId)
+          .order('first_name')
       ]);
 
-      if (tasksRes.error) throw tasksRes.error;
       if (projectsRes.error) throw projectsRes.error;
       if (employeesRes.error) throw employeesRes.error;
 
+      const projectData = projectsRes.data ?? [];
+      let tasksData: Task[] = [];
+
+      if (projectData.length > 0) {
+        const { data: taskRows, error: tasksError } = await supabase
+          .from('tasks')
+          .select('*')
+          .in(
+            'project_id',
+            projectData.map(project => project.id)
+          )
+          .order('deadline', { ascending: true });
+
+        if (tasksError) throw tasksError;
+        tasksData = taskRows ?? [];
+      }
+
       setOrganizationId(orgId);
 
-      setTasks(tasksRes.data || []);
-      setProjects(projectsRes.data || []);
+      setTasks(tasksData);
+      setProjects(projectData);
       setEmployees(employeesRes.data || []);
     } catch (err: any) {
       console.error('Error loading tasks:', err);
