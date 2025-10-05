@@ -259,6 +259,7 @@ function App() {
     );
   };
 
+
   const handleCreateBudget = () => {
     setIsCreatingBudget(true);
     setEditingBudgetId(null);
@@ -351,6 +352,7 @@ function App() {
           activeOrganizationId={activeOrganizationId}
           onOrganizationUpdated={handleOrganizationUpdated}
         />
+
       )}
 
       {currentView === 'profile' && <Profile key={`profile-${activeOrganizationId ?? 'none'}`} />}

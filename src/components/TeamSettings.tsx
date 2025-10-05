@@ -10,6 +10,7 @@ interface TeamSettingsProps {
 }
 
 export default function TeamSettings({ activeOrganizationId, onOrganizationUpdated }: TeamSettingsProps) {
+
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -70,12 +71,14 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
 
       if (!targetOrganizationId || !availableIds.includes(targetOrganizationId)) {
         targetOrganizationId = membershipsList[0].organization_id;
+
       }
 
       if (!targetOrganizationId) {
         setOrganization(null);
         setOrganizationName('');
         setCurrentUserRole(null);
+
         setMembers([]);
         setInvitations([]);
         setPermissions([]);
