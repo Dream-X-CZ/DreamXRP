@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { Plus, UserPlus, Trash2, Mail, Shield, Eye, CreditCard as Edit, X, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { OrganizationMember, Invitation, ResourcePermission, Organization } from '../types/database';
@@ -6,9 +6,11 @@ import { getStoredActiveOrganizationId } from '../lib/organization';
 
 interface TeamSettingsProps {
   activeOrganizationId: string | null;
+  onOrganizationUpdated?: (organization: Organization) => void;
 }
 
-export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps) {
+export default function TeamSettings({ activeOrganizationId, onOrganizationUpdated }: TeamSettingsProps) {
+
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -17,6 +19,11 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState<OrganizationMember | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<OrganizationMember['role'] | null>(null);
+  const [organizationName, setOrganizationName] = useState('');
+  const [savingOrganization, setSavingOrganization] = useState(false);
+  const [organizationStatus, setOrganizationStatus] = useState<string | null>(null);
+  const [organizationError, setOrganizationError] = useState<string | null>(null);
 
   const [inviteForm, setInviteForm] = useState({
     email: '',
@@ -41,9 +48,9 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: memberships, error: membershipError } = await supabase
+      const { data: userMemberships, error: membershipError } = await supabase
         .from('organization_members')
-        .select('organization_id')
+        .select('organization_id, role')
         .eq('user_id', user.id);
 
       if (membershipError) {
@@ -51,17 +58,27 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
         return;
       }
 
-      if (!memberships || memberships.length === 0) return;
+      if (!userMemberships || userMemberships.length === 0) {
+        setOrganization(null);
+        setOrganizationName('');
+        setCurrentUserRole(null);
+        return;
+      }
 
-      const availableIds = memberships.map(member => member.organization_id);
+      const membershipsList = userMemberships as Pick<OrganizationMember, 'organization_id' | 'role'>[];
+      const availableIds = membershipsList.map(member => member.organization_id);
       let targetOrganizationId = activeOrganizationId ?? getStoredActiveOrganizationId();
 
       if (!targetOrganizationId || !availableIds.includes(targetOrganizationId)) {
-        targetOrganizationId = memberships[0].organization_id;
+        targetOrganizationId = membershipsList[0].organization_id;
+
       }
 
       if (!targetOrganizationId) {
         setOrganization(null);
+        setOrganizationName('');
+        setCurrentUserRole(null);
+
         setMembers([]);
         setInvitations([]);
         setPermissions([]);
@@ -82,10 +99,18 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
           .eq('organization_id', targetOrganizationId)
       ]);
 
-      if (orgRes.data) setOrganization(orgRes.data);
+      if (orgRes.data) {
+        setOrganization(orgRes.data);
+        setOrganizationName(orgRes.data.name ?? '');
+        setOrganizationStatus(null);
+        setOrganizationError(null);
+      }
       if (membersRes.data) setMembers(membersRes.data);
       if (invitationsRes.data) setInvitations(invitationsRes.data);
       if (permissionsRes.data) setPermissions(permissionsRes.data);
+
+      const activeMembership = membershipsList.find(member => member.organization_id === targetOrganizationId);
+      setCurrentUserRole(activeMembership?.role ?? null);
     } catch (error) {
       console.error('Error loading team data:', error);
     } finally {
@@ -93,7 +118,57 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
     }
   };
 
-  const handleInvite = async (e: React.FormEvent) => {
+  const canManageOrganization = currentUserRole === 'owner' || currentUserRole === 'admin';
+
+  const handleOrganizationSave = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!organization) return;
+
+    const trimmedName = organizationName.trim();
+
+    if (!trimmedName) {
+      setOrganizationError('Název organizace je povinný.');
+      setOrganizationStatus(null);
+      return;
+    }
+
+    if (trimmedName === organization.name) {
+      setOrganizationStatus('Žádné změny k uložení.');
+      setOrganizationError(null);
+      return;
+    }
+
+    try {
+      setSavingOrganization(true);
+      setOrganizationStatus(null);
+      setOrganizationError(null);
+
+      const { data, error } = await supabase
+        .from('organizations')
+        .update({ name: trimmedName, updated_at: new Date().toISOString() })
+        .eq('id', organization.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        const updated = data as Organization;
+        setOrganization(updated);
+        setOrganizationName(updated.name ?? '');
+        setOrganizationStatus('Název organizace byl aktualizován.');
+        onOrganizationUpdated?.(updated);
+      }
+    } catch (error) {
+      console.error('Error updating organization:', error);
+      setOrganizationError('Nepodařilo se uložit změny organizace.');
+    } finally {
+      setSavingOrganization(false);
+    }
+  };
+
+  const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
 
     if (!organization) return;
@@ -258,7 +333,7 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-[#0a192f]">Tým</h2>
-          <p className="text-gray-600 mt-1">{organization?.name}</p>
+          <p className="text-gray-600 mt-1">{organizationName || 'Bez názvu'}</p>
         </div>
         <button
           onClick={() => setShowInviteForm(true)}
@@ -268,6 +343,62 @@ export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps
           <span>Pozvat člena</span>
         </button>
       </div>
+
+      {organization && (
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex flex-col gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-[#0a192f]">Nastavení organizace</h3>
+              <p className="text-sm text-gray-500">
+                Změňte název svého týmu. Tento název se zobrazuje v horní liště aplikace.
+              </p>
+            </div>
+
+            <form onSubmit={handleOrganizationSave} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Název organizace</label>
+                <input
+                  type="text"
+                  value={organizationName}
+                  onChange={event => setOrganizationName(event.target.value)}
+                  readOnly={!canManageOrganization}
+                  disabled={savingOrganization || !canManageOrganization}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#0a192f] focus:border-transparent ${
+                    canManageOrganization
+                      ? 'border-gray-300'
+                      : 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed'
+                  }`}
+                  placeholder="Např. Dream Studio"
+                />
+              </div>
+
+              {canManageOrganization && (
+                <button
+                  type="submit"
+                  disabled={savingOrganization || !organizationName.trim()}
+                  className="inline-flex items-center justify-center rounded-lg bg-[#0a192f] px-6 py-2 text-white transition hover:bg-opacity-90 disabled:opacity-60"
+                >
+                  {savingOrganization ? 'Ukládání...' : 'Uložit změny'}
+                </button>
+              )}
+            </form>
+
+            {organizationStatus && (
+              <p className="text-sm text-green-600">{organizationStatus}</p>
+            )}
+
+            {organizationError && (
+              <p className="text-sm text-red-600">{organizationError}</p>
+            )}
+
+            {!canManageOrganization && (
+              <p className="text-xs text-gray-500">
+                Pouze vlastníci nebo správci mohou upravovat název organizace.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {showInviteForm && (
         <div className="bg-white rounded-lg shadow p-6 mb-6">

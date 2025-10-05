@@ -244,6 +244,22 @@ function App() {
     setStoredActiveOrganizationId(organizationId);
   };
 
+  const handleOrganizationUpdated = (updatedOrganization: Organization) => {
+    setMemberships(prev =>
+      prev.map(membership =>
+        membership.organization_id === updatedOrganization.id
+          ? {
+              ...membership,
+              organization: membership.organization
+                ? { ...membership.organization, ...updatedOrganization }
+                : updatedOrganization
+            }
+          : membership
+      )
+    );
+  };
+
+
   const handleCreateBudget = () => {
     setIsCreatingBudget(true);
     setEditingBudgetId(null);
@@ -331,7 +347,12 @@ function App() {
       {currentView === 'calendar' && <Calendar key={`calendar-${activeOrganizationId ?? 'none'}`} />}
 
       {currentView === 'team' && (
-        <TeamSettings key={`team-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+        <TeamSettings
+          key={`team-${activeOrganizationId ?? 'none'}`}
+          activeOrganizationId={activeOrganizationId}
+          onOrganizationUpdated={handleOrganizationUpdated}
+        />
+
       )}
 
       {currentView === 'profile' && <Profile key={`profile-${activeOrganizationId ?? 'none'}`} />}
