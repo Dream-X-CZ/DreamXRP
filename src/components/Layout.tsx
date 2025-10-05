@@ -282,6 +282,7 @@ export default function Layout({
                   </div>
                 )}
               </div>
+
             </div>
           </header>
           <div className="flex-1 px-6 lg:px-10 py-8">
