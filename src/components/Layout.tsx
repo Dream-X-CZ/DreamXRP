@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import {
   LogOut,
   FileText,
@@ -11,7 +11,8 @@ import {
   CheckSquare,
   Calendar as CalendarIcon,
   UserCircle,
-  UserCog
+  UserCog,
+  ChevronDown
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -29,16 +30,74 @@ type ViewName =
   | 'profile'
   | 'profile-settings';
 
+interface OrganizationOption {
+  id: string;
+  name: string;
+  role: 'owner' | 'admin' | 'member' | 'viewer';
+}
+
 interface LayoutProps {
   children: ReactNode;
   currentView: ViewName;
   onViewChange: (view: ViewName) => void;
+  activeOrganizationName?: string | null;
+  activeOrganizationId?: string | null;
+  organizations?: OrganizationOption[];
+  onSelectOrganization?: (id: string) => void;
+  pendingInvitationCount?: number;
 }
 
-export default function Layout({ children, currentView, onViewChange }: LayoutProps) {
+export default function Layout({
+  children,
+  currentView,
+  onViewChange,
+  activeOrganizationName,
+  activeOrganizationId,
+  organizations,
+  onSelectOrganization,
+  pendingInvitationCount
+}: LayoutProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.reload();
+  };
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [currentView]);
+
+  const roleLabels: Record<OrganizationOption['role'], string> = {
+    owner: 'Vlastník',
+    admin: 'Správce',
+    member: 'Člen',
+    viewer: 'Pozorovatel'
   };
 
   return (
@@ -100,12 +159,6 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               onClick={() => onViewChange('calendar')}
             />
             <SidebarButton
-              icon={UserCircle}
-              label="Profil"
-              isActive={currentView === 'profile'}
-              onClick={() => onViewChange('profile')}
-            />
-            <SidebarButton
               icon={UserCog}
               label="Nastavení profilu"
               isActive={currentView === 'profile-settings'}
@@ -130,8 +183,110 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
           </div>
         </aside>
 
-        <main className="flex-1 px-6 lg:px-10 py-8">
-          <div className="max-w-6xl mx-auto">{children}</div>
+        <main className="flex-1 flex flex-col">
+          <header className="px-6 lg:px-10 py-4 border-b border-gray-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+            <div className="max-w-6xl mx-auto flex items-center justify-end">
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(prev => !prev)}
+                  className={`flex items-center gap-3 rounded-full px-4 py-2 text-sm font-medium transition-colors border ${
+                    menuOpen || currentView === 'profile' || currentView === 'profile-settings'
+                      ? 'bg-[#0a192f] text-white shadow border-transparent'
+                      : 'bg-white text-[#0a192f] border-[#0a192f]/10 hover:border-[#0a192f]/30'
+                  }`}
+                >
+                  <UserCircle className="h-5 w-5" />
+                  <div className="flex flex-col text-left">
+                    <span className="text-xs uppercase tracking-wide">
+                      {pendingInvitationCount && pendingInvitationCount > 0 ? 'Pozvánka čeká' : 'Můj profil'}
+                    </span>
+                    <span className="text-sm font-semibold">
+                      {activeOrganizationName || 'Bez týmu'}
+                    </span>
+                  </div>
+                  {pendingInvitationCount && pendingInvitationCount > 0 && (
+                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-white/90 px-2 text-xs font-semibold text-[#0a192f]">
+                      {pendingInvitationCount}
+                    </span>
+                  )}
+                  <ChevronDown className={`h-4 w-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {menuOpen && (
+                  <div className="absolute right-0 z-50 mt-3 w-72 rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
+                    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Navigace
+                    </div>
+                    <button
+                      onClick={() => {
+                        onViewChange('profile');
+                        setMenuOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-gray-50 ${
+                        currentView === 'profile' ? 'text-[#0a192f]' : 'text-gray-700'
+                      }`}
+                    >
+                      <UserCircle className="h-4 w-4" />
+                      Profil
+                    </button>
+                    <button
+                      onClick={() => {
+                        onViewChange('profile-settings');
+                        setMenuOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-gray-50 ${
+                        currentView === 'profile-settings' ? 'text-[#0a192f]' : 'text-gray-700'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <UserCog className="h-4 w-4" />
+                        Nastavení profilu
+                      </span>
+                      {pendingInvitationCount && pendingInvitationCount > 0 && (
+                        <span className="inline-flex items-center justify-center rounded-full bg-[#0a192f] px-2 py-0.5 text-xs font-semibold text-white">
+                          {pendingInvitationCount}
+                        </span>
+                      )}
+                    </button>
+
+                    <div className="my-2 border-t border-gray-100" />
+                    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Moje týmy
+                    </div>
+
+                    {organizations && organizations.length > 0 ? (
+                      organizations.map(organization => {
+                        const isActive = organization.id === activeOrganizationId;
+                        return (
+                          <button
+                            key={organization.id}
+                            onClick={() => {
+                              onSelectOrganization?.(organization.id);
+                              onViewChange('team');
+                              setMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition hover:bg-gray-50 ${
+                              isActive ? 'text-[#0a192f] font-semibold' : 'text-gray-700'
+                            }`}
+                          >
+                            <span>{organization.name}</span>
+                            <span className="text-xs text-gray-400">
+                              {roleLabels[organization.role]}
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <p className="px-3 py-2 text-sm text-gray-500">Zatím nemáte žádné týmy.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+          <div className="flex-1 px-6 lg:px-10 py-8">
+            <div className="max-w-6xl mx-auto">{children}</div>
+          </div>
         </main>
       </div>
     </div>

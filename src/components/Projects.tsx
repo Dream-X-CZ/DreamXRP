@@ -26,7 +26,11 @@ import ProjectDetails from './ProjectDetails';
 
 type StatusFilter = 'all' | Project['status'];
 
-export default function Projects() {
+interface ProjectsProps {
+  activeOrganizationId: string | null;
+}
+
+export default function Projects({ activeOrganizationId }: ProjectsProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,7 +70,7 @@ export default function Projects() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeOrganizationId]);
 
   const loadData = async () => {
     setLoading(true);
@@ -83,7 +87,7 @@ export default function Projects() {
         return;
       }
 
-      const organizationPromise = ensureUserOrganization(user.id);
+      const organizationPromise = ensureUserOrganization(user.id, activeOrganizationId);
 
       const [orgId, projectsRes, budgetsRes] = await Promise.all([
         organizationPromise,
@@ -116,9 +120,12 @@ export default function Projects() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      let orgId = organizationId;
+      let orgId = organizationId || activeOrganizationId;
       if (!orgId) {
-        orgId = await ensureUserOrganization(user.id);
+        orgId = await ensureUserOrganization(user.id, activeOrganizationId);
+      }
+
+      if (orgId !== organizationId) {
         setOrganizationId(orgId);
       }
 
