@@ -87,12 +87,19 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
         return;
       }
 
-      const organizationPromise = ensureUserOrganization(user.id, activeOrganizationId);
+      const orgId = await ensureUserOrganization(user.id, activeOrganizationId);
 
-      const [orgId, projectsRes, budgetsRes] = await Promise.all([
-        organizationPromise,
-        supabase.from('projects').select('*').order('created_at', { ascending: false }),
-        supabase.from('budgets').select('*').order('name')
+      const [projectsRes, budgetsRes] = await Promise.all([
+        supabase
+          .from('projects')
+          .select('*')
+          .eq('organization_id', orgId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('budgets')
+          .select('*')
+          .eq('organization_id', orgId)
+          .order('name')
       ]);
 
       if (projectsRes.error) throw projectsRes.error;
