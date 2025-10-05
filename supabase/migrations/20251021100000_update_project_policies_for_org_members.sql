@@ -1,33 +1,11 @@
 -- Allow organization members to access and manage projects created within their teams
 DO $$
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE polname = 'Users can view own projects' AND tablename = 'projects'
-  ) THEN
-    DROP POLICY "Users can view own projects" ON projects;
-  END IF;
+  DROP POLICY IF EXISTS "Users can view own projects" ON projects;
+  DROP POLICY IF EXISTS "Users can insert own projects" ON projects;
+  DROP POLICY IF EXISTS "Users can update own projects" ON projects;
+  DROP POLICY IF EXISTS "Users can delete own projects" ON projects;
 
-  IF EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE polname = 'Users can insert own projects' AND tablename = 'projects'
-  ) THEN
-    DROP POLICY "Users can insert own projects" ON projects;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE polname = 'Users can update own projects' AND tablename = 'projects'
-  ) THEN
-    DROP POLICY "Users can update own projects" ON projects;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE polname = 'Users can delete own projects' AND tablename = 'projects'
-  ) THEN
-    DROP POLICY "Users can delete own projects" ON projects;
-  END IF;
 END $$;
 
 CREATE POLICY "Organization members can view projects"
