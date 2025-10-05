@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react';
 import { Plus, UserPlus, Trash2, Mail, Shield, Eye, CreditCard as Edit, X, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { OrganizationMember, Invitation, ResourcePermission, Organization } from '../types/database';
+import { getStoredActiveOrganizationId } from '../lib/organization';
 
-export default function TeamSettings() {
+interface TeamSettingsProps {
+  activeOrganizationId: string | null;
+}
+
+export default function TeamSettings({ activeOrganizationId }: TeamSettingsProps) {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -28,9 +33,10 @@ export default function TeamSettings() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeOrganizationId]);
 
   const loadData = async () => {
+    setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -47,20 +53,33 @@ export default function TeamSettings() {
 
       if (!memberships || memberships.length === 0) return;
 
-      const membership = memberships[0];
+      const availableIds = memberships.map(member => member.organization_id);
+      let targetOrganizationId = activeOrganizationId ?? getStoredActiveOrganizationId();
+
+      if (!targetOrganizationId || !availableIds.includes(targetOrganizationId)) {
+        targetOrganizationId = memberships[0].organization_id;
+      }
+
+      if (!targetOrganizationId) {
+        setOrganization(null);
+        setMembers([]);
+        setInvitations([]);
+        setPermissions([]);
+        return;
+      }
 
       const [orgRes, membersRes, invitationsRes, permissionsRes] = await Promise.all([
-        supabase.from('organizations').select('*').eq('id', membership.organization_id).single(),
-        supabase.from('organization_members').select('*').eq('organization_id', membership.organization_id),
+        supabase.from('organizations').select('*').eq('id', targetOrganizationId).single(),
+        supabase.from('organization_members').select('*').eq('organization_id', targetOrganizationId),
         supabase
           .from('invitations')
           .select('*')
-          .eq('organization_id', membership.organization_id)
+          .eq('organization_id', targetOrganizationId)
           .eq('status', 'pending'),
         supabase
           .from('resource_permissions')
           .select('*')
-          .eq('organization_id', membership.organization_id)
+          .eq('organization_id', targetOrganizationId)
       ]);
 
       if (orgRes.data) setOrganization(orgRes.data);
