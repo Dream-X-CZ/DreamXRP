@@ -92,7 +92,11 @@ const initialFormState: TaskFormState = {
   deadlineTime: ''
 };
 
-export default function Tasks() {
+interface TasksProps {
+  activeOrganizationId: string | null;
+}
+
+export default function Tasks({ activeOrganizationId }: TasksProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -113,7 +117,7 @@ export default function Tasks() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeOrganizationId]);
 
   const loadData = async () => {
     setLoading(true);
@@ -133,7 +137,7 @@ export default function Tasks() {
         return;
       }
 
-      const organizationPromise = ensureUserOrganization(user.id);
+      const organizationPromise = ensureUserOrganization(user.id, activeOrganizationId);
 
       const [orgId, tasksRes, projectsRes, employeesRes] = await Promise.all([
         organizationPromise,
@@ -269,10 +273,13 @@ export default function Tasks() {
         return;
       }
 
-      let activeOrganizationId = organizationId;
-      if (!activeOrganizationId) {
-        activeOrganizationId = await ensureUserOrganization(user.id);
-        setOrganizationId(activeOrganizationId);
+      let organizationForTask = organizationId || activeOrganizationId;
+      if (!organizationForTask) {
+        organizationForTask = await ensureUserOrganization(user.id, activeOrganizationId);
+      }
+
+      if (organizationForTask !== organizationId) {
+        setOrganizationId(organizationForTask);
       }
 
       const selectedProject = projects.find(project => project.id === formData.project_id);
@@ -285,7 +292,7 @@ export default function Tasks() {
       if (!selectedProject.organization_id) {
         const { error: projectUpdateError } = await supabase
           .from('projects')
-          .update({ organization_id: activeOrganizationId })
+          .update({ organization_id: organizationForTask })
           .eq('id', selectedProject.id);
 
         if (projectUpdateError) throw projectUpdateError;
@@ -293,7 +300,7 @@ export default function Tasks() {
         setProjects(prev =>
           prev.map(project =>
             project.id === selectedProject.id
-              ? { ...project, organization_id: activeOrganizationId }
+              ? { ...project, organization_id: organizationForTask }
               : project
           )
         );

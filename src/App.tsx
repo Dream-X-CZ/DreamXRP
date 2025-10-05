@@ -11,11 +11,18 @@ import Projects from './components/Projects';
 import Dashboard from './components/Dashboard';
 import TeamSettings from './components/TeamSettings';
 import Tasks from './components/Tasks';
-import PendingInvitations from './components/PendingInvitations';
 import Calendar from './components/Calendar';
 import Profile from './components/Profile';
 import ProfileSettings from './components/ProfileSettings';
-import { InvitationWithOrganization } from './types/database';
+import {
+  InvitationWithOrganization,
+  OrganizationMember,
+  Organization
+} from './types/database';
+import {
+  getStoredActiveOrganizationId,
+  setStoredActiveOrganizationId
+} from './lib/organization';
 
 type View =
   | 'dashboard'
@@ -38,6 +45,8 @@ function App() {
   const [isCreatingBudget, setIsCreatingBudget] = useState(false);
   const [pendingInvitations, setPendingInvitations] = useState<InvitationWithOrganization[]>([]);
   const [processingInviteId, setProcessingInviteId] = useState<string | null>(null);
+  const [memberships, setMemberships] = useState<(OrganizationMember & { organization: Organization | null })[]>([]);
+  const [activeOrganizationId, setActiveOrganizationId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -57,8 +66,11 @@ function App() {
   useEffect(() => {
     if (session?.user) {
       loadPendingInvitations(session.user);
+      loadMemberships(session.user.id);
     } else {
       setPendingInvitations([]);
+      setMemberships([]);
+      setActiveOrganizationId(null);
     }
   }, [session]);
 
@@ -138,6 +150,34 @@ function App() {
     }
   };
 
+  const loadMemberships = async (userId: string, preferredOrganizationId?: string | null) => {
+    try {
+      const { data, error } = await supabase
+        .from('organization_members')
+        .select('*, organization:organizations(*)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const membershipList = (data as (OrganizationMember & { organization: Organization | null })[] | null) ?? [];
+      setMemberships(membershipList);
+
+      const membershipIds = new Set(membershipList.map(membership => membership.organization_id));
+
+      let nextActiveId = preferredOrganizationId || activeOrganizationId || getStoredActiveOrganizationId();
+
+      if (!nextActiveId || !membershipIds.has(nextActiveId)) {
+        nextActiveId = membershipList[0]?.organization_id ?? null;
+      }
+
+      setActiveOrganizationId(nextActiveId ?? null);
+      setStoredActiveOrganizationId(nextActiveId ?? null);
+    } catch (error) {
+      console.error('Error loading organization memberships:', error);
+    }
+  };
+
   const handleAcceptInvitation = async (invitationId: string) => {
     if (!session?.user) return;
 
@@ -160,6 +200,8 @@ function App() {
 
       const remainingInvites = pendingInvitations.filter(inv => inv.id !== invitationId);
       setPendingInvitations(remainingInvites);
+
+      await loadMemberships(session.user.id, invitation.organization_id);
 
       if (remainingInvites.length === 0) {
         await initializeDefaultCategories(session.user.id);
@@ -197,6 +239,11 @@ function App() {
     }
   };
 
+  const handleSelectOrganization = (organizationId: string) => {
+    setActiveOrganizationId(organizationId);
+    setStoredActiveOrganizationId(organizationId);
+  };
+
   const handleCreateBudget = () => {
     setIsCreatingBudget(true);
     setEditingBudgetId(null);
@@ -231,46 +278,73 @@ function App() {
     return <AuthForm onSuccess={() => setSession(true)} />;
   }
 
-  if (pendingInvitations.length > 0) {
-    return (
-      <PendingInvitations
-        invitations={pendingInvitations}
-        onAccept={handleAcceptInvitation}
-        onDecline={handleDeclineInvitation}
-        processingId={processingInviteId}
-      />
-    );
-  }
-
   return (
-    <Layout currentView={currentView} onViewChange={setCurrentView}>
-      {currentView === 'dashboard' && <Dashboard onNavigate={handleDashboardNavigate} />}
+    <Layout
+      currentView={currentView}
+      onViewChange={setCurrentView}
+      activeOrganizationName={
+        memberships.find(member => member.organization_id === activeOrganizationId)?.organization?.name ?? null
+      }
+      organizations={memberships.map(member => ({
+        id: member.organization_id,
+        name: member.organization?.name ?? 'Neznámý tým',
+        role: member.role
+      }))}
+      activeOrganizationId={activeOrganizationId}
+      onSelectOrganization={handleSelectOrganization}
+      pendingInvitationCount={pendingInvitations.length}
+    >
+      {currentView === 'dashboard' && (
+        <Dashboard key={`dashboard-${activeOrganizationId ?? 'none'}`} onNavigate={handleDashboardNavigate} />
+      )}
 
       {currentView === 'budgets' && !isCreatingBudget && (
-        <BudgetList onCreateNew={handleCreateBudget} onEditBudget={handleEditBudget} />
+        <BudgetList
+          key={`budget-list-${activeOrganizationId ?? 'none'}`}
+          onCreateNew={handleCreateBudget}
+          onEditBudget={handleEditBudget}
+        />
       )}
 
       {currentView === 'budgets' && isCreatingBudget && (
-        <BudgetEditor budgetId={editingBudgetId} onBack={handleBackToBudgets} />
+        <BudgetEditor
+          key={`budget-editor-${activeOrganizationId ?? 'none'}`}
+          budgetId={editingBudgetId}
+          onBack={handleBackToBudgets}
+        />
       )}
 
-      {currentView === 'expenses' && <ExpensesList />}
+      {currentView === 'expenses' && <ExpensesList key={`expenses-${activeOrganizationId ?? 'none'}`} />}
 
-      {currentView === 'analytics' && <Analytics />}
+      {currentView === 'analytics' && <Analytics key={`analytics-${activeOrganizationId ?? 'none'}`} />}
 
-      {currentView === 'employees' && <Employees />}
+      {currentView === 'employees' && <Employees key={`employees-${activeOrganizationId ?? 'none'}`} />}
 
-      {currentView === 'projects' && <Projects />}
+      {currentView === 'projects' && (
+        <Projects key={`projects-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
-      {currentView === 'tasks' && <Tasks />}
+      {currentView === 'tasks' && (
+        <Tasks key={`tasks-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
-      {currentView === 'calendar' && <Calendar />}
+      {currentView === 'calendar' && <Calendar key={`calendar-${activeOrganizationId ?? 'none'}`} />}
 
-      {currentView === 'team' && <TeamSettings />}
+      {currentView === 'team' && (
+        <TeamSettings key={`team-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
-      {currentView === 'profile' && <Profile />}
+      {currentView === 'profile' && <Profile key={`profile-${activeOrganizationId ?? 'none'}`} />}
 
-      {currentView === 'profile-settings' && <ProfileSettings />}
+      {currentView === 'profile-settings' && (
+        <ProfileSettings
+          key={`profile-settings-${activeOrganizationId ?? 'none'}`}
+          pendingInvitations={pendingInvitations}
+          onAcceptInvitation={handleAcceptInvitation}
+          onDeclineInvitation={handleDeclineInvitation}
+          processingInvitationId={processingInviteId}
+        />
+      )}
     </Layout>
   );
 }
