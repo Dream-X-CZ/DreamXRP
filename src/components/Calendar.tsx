@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import {
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -9,7 +9,22 @@ import {
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
-import type { CalendarEvent } from '../types/database';
+import type { CalendarEvent, Expense, Project, Task } from '../types/database';
+
+type CalendarEventSource = 'calendar' | 'task' | 'project' | 'expense';
+
+type EnrichedCalendarEvent = CalendarEvent & {
+  source: CalendarEventSource;
+  allDay?: boolean;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
+};
+
+type CalendarDayEvent = {
+  event: EnrichedCalendarEvent;
+  occurrenceDate: string;
+  isFirstDay: boolean;
+  isLastDay: boolean;
+};
 
 interface CalendarProps {
   activeOrganizationId: string | null;
@@ -20,7 +35,7 @@ type DayCell = {
   isCurrentMonth: boolean;
   isToday: boolean;
   isSelected: boolean;
-  events: CalendarEvent[];
+  events: CalendarDayEvent[];
 };
 
 const WEEKDAY_LABELS = [
@@ -50,6 +65,284 @@ function toTitleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function normalizeStartOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function isMidnight(date: Date): boolean {
+  return (
+    date.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0
+  );
+}
+
+function inferAllDay(startISO: string, endISO: string): boolean {
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return false;
+  }
+
+  const duration = end.getTime() - start.getTime();
+  const isMultiDay = duration >= 24 * 60 * 60 * 1000;
+
+  return isMidnight(start) && isMidnight(end) && (duration === 0 || isMultiDay);
+}
+
+function doesEventOverlapRange(
+  event: EnrichedCalendarEvent,
+  rangeStart: Date,
+  rangeEndExclusive: Date
+): boolean {
+  const eventStart = new Date(event.start_at);
+  const eventEnd = new Date(event.end_at);
+
+  if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) {
+    return false;
+  }
+
+  if (eventEnd.getTime() < eventStart.getTime()) {
+    return false;
+  }
+
+  return eventEnd.getTime() > rangeStart.getTime() && eventStart.getTime() < rangeEndExclusive.getTime();
+}
+
+function getEventOccurrences(event: EnrichedCalendarEvent): CalendarDayEvent[] {
+  const occurrences: CalendarDayEvent[] = [];
+  const eventStart = new Date(event.start_at);
+  const eventEnd = new Date(event.end_at);
+
+  if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) {
+    return occurrences;
+  }
+
+  const startDay = normalizeStartOfDay(eventStart);
+  const tentativeEndDay = normalizeStartOfDay(eventEnd);
+  const endDay = isMidnight(eventEnd) && eventEnd.getTime() > eventStart.getTime()
+    ? addDays(tentativeEndDay, -1)
+    : tentativeEndDay;
+
+  if (endDay.getTime() < startDay.getTime()) {
+    return [
+      {
+        event,
+        occurrenceDate: formatDateKey(startDay),
+        isFirstDay: true,
+        isLastDay: true
+      }
+    ];
+  }
+
+  for (
+    let cursor = new Date(startDay), index = 0;
+    cursor.getTime() <= endDay.getTime();
+    cursor.setDate(cursor.getDate() + 1), index += 1
+  ) {
+    const currentDateKey = formatDateKey(cursor);
+    occurrences.push({
+      event,
+      occurrenceDate: currentDateKey,
+      isFirstDay: index === 0,
+      isLastDay: cursor.getTime() === endDay.getTime()
+    });
+  }
+
+  return occurrences;
+}
+
+const SOURCE_LABELS: Record<CalendarEventSource, string> = {
+  calendar: 'Událost',
+  task: 'Úkol',
+  project: 'Projekt',
+  expense: 'Výdaj'
+};
+
+const SOURCE_ACCENT_CLASSES: Record<CalendarEventSource, string> = {
+  calendar: 'bg-indigo-500',
+  task: 'bg-emerald-500',
+  project: 'bg-sky-500',
+  expense: 'bg-amber-500'
+};
+
+const TASK_STATUS_LABELS: Record<Task['status'], string> = {
+  todo: 'Plánováno',
+  in_progress: 'Probíhá',
+  completed: 'Dokončeno',
+  cancelled: 'Zrušeno'
+};
+
+const TASK_PRIORITY_LABELS: Record<Task['priority'], string> = {
+  low: 'Nízká',
+  medium: 'Střední',
+  high: 'Vysoká',
+  urgent: 'Kritická'
+};
+
+const PROJECT_STATUS_LABELS: Record<Project['status'], string> = {
+  planning: 'Plánování',
+  active: 'Aktivní',
+  completed: 'Dokončeno',
+  'on-hold': 'Pozastaveno',
+  cancelled: 'Zrušeno'
+};
+
+function getEventAccentClass(source: CalendarEventSource): string {
+  return SOURCE_ACCENT_CLASSES[source] ?? SOURCE_ACCENT_CLASSES.calendar;
+}
+
+function getSourceLabel(source: CalendarEventSource): string {
+  return SOURCE_LABELS[source] ?? SOURCE_LABELS.calendar;
+}
+
+function createProjectEvent(project: Project, organizationId: string): EnrichedCalendarEvent | null {
+  const hasStart = Boolean(project.start_date);
+  const hasEnd = Boolean(project.end_date);
+
+  if (!hasStart && !hasEnd) {
+    return null;
+  }
+
+  const startDate = project.start_date ? normalizeStartOfDay(new Date(project.start_date)) : null;
+  const endDate = project.end_date ? normalizeStartOfDay(new Date(project.end_date)) : null;
+
+  let timelineStart: Date | null = startDate;
+  let timelineEnd: Date | null = endDate;
+
+  if (!timelineStart && timelineEnd) {
+    timelineStart = new Date(timelineEnd);
+  }
+
+  if (!timelineEnd && timelineStart) {
+    timelineEnd = new Date(timelineStart);
+  }
+
+  if (!timelineStart || !timelineEnd) {
+    return null;
+  }
+
+  if (timelineEnd.getTime() < timelineStart.getTime()) {
+    timelineEnd = new Date(timelineStart);
+  }
+
+  const endExclusive = addDays(timelineEnd, 1);
+
+  return {
+    id: `project-${project.id}`,
+    organization_id: organizationId,
+    title: `Projekt: ${project.name}`,
+    description: project.description ?? project.notes ?? null,
+    start_at: timelineStart.toISOString(),
+    end_at: endExclusive.toISOString(),
+    type: 'project',
+    task_id: null,
+    created_at: project.created_at,
+    updated_at: project.updated_at,
+    source: 'project',
+    allDay: true,
+    metadata: {
+      status: project.status,
+      startDate: project.start_date ?? null,
+      endDate: project.end_date ?? null
+    }
+  };
+}
+
+function createTaskEvent(
+  task: Task,
+  organizationId: string,
+  projectMap: Map<string, Project>
+): EnrichedCalendarEvent | null {
+  if (!task.deadline) {
+    return null;
+  }
+
+  const deadline = new Date(task.deadline);
+  if (Number.isNaN(deadline.getTime())) {
+    return null;
+  }
+
+  const hasSpecificTime = task.deadline.includes('T');
+  const start = new Date(deadline);
+  let end = new Date(deadline);
+
+  if (hasSpecificTime) {
+    end.setHours(end.getHours() + 1);
+  } else {
+    start.setHours(0, 0, 0, 0);
+    end = addDays(start, 1);
+  }
+
+  const project = task.project_id ? projectMap.get(task.project_id) : undefined;
+
+  return {
+    id: `task-${task.id}`,
+    organization_id: organizationId,
+    title: task.title,
+    description: task.description ?? null,
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
+    type: 'task-deadline',
+    task_id: task.id,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+    source: 'task',
+    allDay: !hasSpecificTime,
+    metadata: {
+      status: task.status,
+      priority: task.priority,
+      projectName: project?.name ?? null
+    }
+  };
+}
+
+function createExpenseEvent(expense: Expense, organizationId: string): EnrichedCalendarEvent | null {
+  if (!expense.date) {
+    return null;
+  }
+
+  const expenseDate = new Date(expense.date);
+  if (Number.isNaN(expenseDate.getTime())) {
+    return null;
+  }
+
+  const start = normalizeStartOfDay(expenseDate);
+  const end = addDays(start, 1);
+
+  return {
+    id: `expense-${expense.id}`,
+    organization_id: organizationId,
+    title: `Výdaj: ${expense.name}`,
+    description: expense.notes ?? null,
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
+    type: 'expense',
+    task_id: null,
+    created_at: expense.created_at,
+    updated_at: expense.date ?? expense.created_at,
+    source: 'expense',
+    allDay: true,
+    metadata: {
+      amount: expense.amount,
+      isBillable: expense.is_billable,
+      isBilled: expense.is_billed,
+      projectId: expense.project_id ?? null,
+      budgetId: expense.budget_id ?? null
+    }
+  };
+}
+
 export default function Calendar({ activeOrganizationId }: CalendarProps) {
   const [currentDate, setCurrentDate] = useState(() => {
     const now = new Date();
@@ -57,7 +350,7 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
   });
   const todayKey = useMemo(() => formatDateKey(new Date()), []);
   const [selectedDate, setSelectedDate] = useState(todayKey);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<EnrichedCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,27 +406,112 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
         const organizationId = await ensureUserOrganization(user.id, activeOrganizationId);
         if (!isActive) return;
 
-        const startISO = new Date(rangeStartTime).toISOString();
-        const endISO = new Date(rangeEndTime).toISOString();
+        const rangeStart = new Date(rangeStartTime);
+        const rangeEndExclusive = new Date(rangeEndTime);
+        const rangeStartISO = rangeStart.toISOString();
+        const rangeEndISO = rangeEndExclusive.toISOString();
+        const rangeStartDateKey = formatDateKey(rangeStart);
+        const inclusiveRangeEnd = addDays(rangeEndExclusive, -1);
+        const rangeEndDateKey = formatDateKey(inclusiveRangeEnd);
 
-        const { data, error: eventsError } = await supabase
-          .from('calendar_events')
-          .select(
-            'id, organization_id, title, description, start_at, end_at, type, task_id, created_at, updated_at'
-          )
-          .eq('organization_id', organizationId)
-          .gte('start_at', startISO)
-          .lt('start_at', endISO)
-          .order('start_at', { ascending: true })
-          .returns<CalendarEvent[]>();
+        const [calendarEventsRes, projectsRes, expensesRes] = await Promise.all([
+          supabase
+            .from('calendar_events')
+            .select(
+              'id, organization_id, title, description, start_at, end_at, type, task_id, created_at, updated_at'
+            )
+            .eq('organization_id', organizationId)
+            .gte('end_at', rangeStartISO)
+            .lt('start_at', rangeEndISO)
+            .order('start_at', { ascending: true })
+            .returns<CalendarEvent[]>(),
+          supabase
+            .from('projects')
+            .select(
+              'id, name, description, notes, start_date, end_date, status, created_at, updated_at'
+            )
+            .eq('organization_id', organizationId),
+          supabase
+            .from('expenses')
+            .select(
+              'id, name, amount, date, notes, project_id, budget_id, is_billable, is_billed, created_at'
+            )
+            .eq('organization_id', organizationId)
+            .gte('date', rangeStartDateKey)
+            .lte('date', rangeEndDateKey)
+        ]);
 
-        if (eventsError) {
-          throw eventsError;
+        if (calendarEventsRes.error) throw calendarEventsRes.error;
+        if (projectsRes.error) throw projectsRes.error;
+        if (expensesRes.error) throw expensesRes.error;
+
+        const projects = (projectsRes.data ?? []) as Project[];
+        const projectMap = new Map(projects.map(project => [project.id, project]));
+        const expenses = (expensesRes.data ?? []) as Expense[];
+
+        let tasks: Task[] = [];
+
+        if (projects.length > 0) {
+          const projectIds = projects.map(project => project.id);
+          const { data: taskRows, error: tasksError } = await supabase
+            .from('tasks')
+            .select(
+              'id, title, description, status, priority, deadline, project_id, estimated_hours, actual_hours, created_at, updated_at'
+            )
+            .in('project_id', projectIds)
+            .not('deadline', 'is', null);
+
+          if (tasksError) throw tasksError;
+
+          tasks = (taskRows ?? []).filter(task => {
+            if (!task.deadline) return false;
+            const deadlineDate = new Date(task.deadline);
+            if (Number.isNaN(deadlineDate.getTime())) return false;
+            return (
+              deadlineDate.getTime() >= rangeStart.getTime() &&
+              deadlineDate.getTime() < rangeEndExclusive.getTime()
+            );
+          });
         }
 
-        if (isActive) {
-          setEvents(data ?? []);
-        }
+        if (!isActive) return;
+
+        const combinedEvents: EnrichedCalendarEvent[] = [];
+
+        const baseEvents = (calendarEventsRes.data ?? []).map(event => ({
+          ...event,
+          source: 'calendar' as const,
+          allDay: inferAllDay(event.start_at, event.end_at)
+        }));
+
+        combinedEvents.push(...baseEvents);
+
+        const projectEvents = projects
+          .map(project => createProjectEvent(project, organizationId))
+          .filter((event): event is EnrichedCalendarEvent => Boolean(event))
+          .filter(event => doesEventOverlapRange(event, rangeStart, rangeEndExclusive));
+
+        combinedEvents.push(...projectEvents);
+
+        const taskEvents = tasks
+          .map(task => createTaskEvent(task, organizationId, projectMap))
+          .filter((event): event is EnrichedCalendarEvent => Boolean(event))
+          .filter(event => doesEventOverlapRange(event, rangeStart, rangeEndExclusive));
+
+        combinedEvents.push(...taskEvents);
+
+        const expenseEvents = expenses
+          .map(expense => createExpenseEvent(expense, organizationId))
+          .filter((event): event is EnrichedCalendarEvent => Boolean(event))
+          .filter(event => doesEventOverlapRange(event, rangeStart, rangeEndExclusive));
+
+        combinedEvents.push(...expenseEvents);
+
+        combinedEvents.sort(
+          (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+        );
+
+        setEvents(combinedEvents);
       } catch (err) {
         console.error('Error loading calendar events:', err);
         if (isActive) {
@@ -176,20 +554,27 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
   }, [currentDate]);
 
   const eventsByDate = useMemo(() => {
-    const grouped: Record<string, CalendarEvent[]> = {};
+    const grouped: Record<string, CalendarDayEvent[]> = {};
 
     events.forEach(event => {
-      const dateKey = formatDateKey(new Date(event.start_at));
-      if (!grouped[dateKey]) {
-        grouped[dateKey] = [];
-      }
-      grouped[dateKey].push(event);
+      const occurrences = getEventOccurrences(event);
+      occurrences.forEach(occurrence => {
+        if (!grouped[occurrence.occurrenceDate]) {
+          grouped[occurrence.occurrenceDate] = [];
+        }
+        grouped[occurrence.occurrenceDate].push(occurrence);
+      });
     });
 
     Object.values(grouped).forEach(list => {
-      list.sort(
-        (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
-      );
+      list.sort((a, b) => {
+        const startDiff =
+          new Date(a.event.start_at).getTime() - new Date(b.event.start_at).getTime();
+        if (startDiff !== 0) {
+          return startDiff;
+        }
+        return a.event.title.localeCompare(b.event.title);
+      });
     });
 
     return grouped;
@@ -236,12 +621,107 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
     return toTitleCase(label);
   }, [dayDetailFormatter, selectedDate]);
 
-  const formatTime = (isoString: string) => timeFormatter.format(new Date(isoString));
+  const getOccurrenceTimingLabel = (occurrence: CalendarDayEvent) => {
+    const { event, isFirstDay, isLastDay } = occurrence;
 
-  const formatEventTimeRange = (event: CalendarEvent) => {
-    const start = timeFormatter.format(new Date(event.start_at));
-    const end = timeFormatter.format(new Date(event.end_at));
-    return `${start} – ${end}`;
+    if (event.allDay) {
+      if (isFirstDay && isLastDay) {
+        return 'Celý den';
+      }
+      if (isFirstDay) {
+        return 'Začíná';
+      }
+      if (isLastDay) {
+        return 'Končí';
+      }
+      return 'Probíhá';
+    }
+
+    const start = new Date(event.start_at);
+    const end = new Date(event.end_at);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return '';
+    }
+
+    if (isFirstDay && isLastDay) {
+      return `${timeFormatter.format(start)} – ${timeFormatter.format(end)}`;
+    }
+
+    if (isFirstDay) {
+      return `Od ${timeFormatter.format(start)}`;
+    }
+
+    if (isLastDay) {
+      return `Do ${timeFormatter.format(end)}`;
+    }
+
+    return 'Pokračuje';
+  };
+
+  const getEventMetadataLabel = (occurrence: CalendarDayEvent) => {
+    const { event } = occurrence;
+    const metadata = event.metadata;
+
+    if (!metadata) {
+      return null;
+    }
+
+    if (event.source === 'task') {
+      const details: string[] = [];
+      if (typeof metadata.projectName === 'string' && metadata.projectName.trim()) {
+        details.push(metadata.projectName);
+      }
+      if (typeof metadata.status === 'string' && TASK_STATUS_LABELS[metadata.status as Task['status']]) {
+        details.push(`Stav: ${TASK_STATUS_LABELS[metadata.status as Task['status']]}`);
+      }
+      if (
+        typeof metadata.priority === 'string' &&
+        TASK_PRIORITY_LABELS[metadata.priority as Task['priority']]
+      ) {
+        details.push(`Priorita: ${TASK_PRIORITY_LABELS[metadata.priority as Task['priority']]}`);
+      }
+      return details.join(' • ') || null;
+    }
+
+    if (event.source === 'project') {
+      const details: string[] = [];
+      if (
+        typeof metadata.status === 'string' &&
+        PROJECT_STATUS_LABELS[metadata.status as Project['status']]
+      ) {
+        details.push(`Stav: ${PROJECT_STATUS_LABELS[metadata.status as Project['status']]}`);
+      }
+      if (typeof metadata.startDate === 'string' && typeof metadata.endDate === 'string') {
+        details.push(`${metadata.startDate} – ${metadata.endDate}`);
+      } else if (typeof metadata.startDate === 'string') {
+        details.push(`Od ${metadata.startDate}`);
+      } else if (typeof metadata.endDate === 'string') {
+        details.push(`Do ${metadata.endDate}`);
+      }
+      return details.join(' • ') || null;
+    }
+
+    if (event.source === 'expense') {
+      const details: string[] = [];
+      if (typeof metadata.amount === 'number') {
+        details.push(
+          `Částka: ${metadata.amount.toLocaleString('cs-CZ', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+          })} Kč`
+        );
+      }
+      if (metadata.isBillable) {
+        details.push('Fakturovatelné');
+      }
+      if (metadata.isBilled) {
+        details.push('Vyfakturováno');
+      }
+      return details.join(' • ') || null;
+    }
+
+    return null;
   };
 
   const handlePreviousMonth = () => {
@@ -260,6 +740,13 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
 
   const handleSelectDate = (dateKey: string) => {
     setSelectedDate(dateKey);
+  };
+
+  const handleDayKeyDown = (event: KeyboardEvent<HTMLDivElement>, dateKey: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleSelectDate(dateKey);
+    }
   };
 
   return (
@@ -413,35 +900,53 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
             {days.map(day => (
               <div
                 key={day.date}
+                role="button"
+                tabIndex={0}
+                aria-label={`Den ${Number(day.date.split('-')[2])}`}
+                aria-pressed={day.isSelected}
+                onClick={() => handleSelectDate(day.date)}
+                onKeyDown={event => handleDayKeyDown(event, day.date)}
                 data-is-today={day.isToday ? '' : undefined}
                 data-is-current-month={day.isCurrentMonth ? '' : undefined}
-                className="group relative bg-gray-50 px-3 py-2 text-gray-500 data-is-current-month:bg-white"
+                data-is-selected={day.isSelected ? '' : undefined}
+                className="group relative cursor-pointer bg-gray-50 px-3 py-2 text-left text-gray-500 outline-none transition data-is-current-month:bg-white data-is-selected:ring-2 data-is-selected:ring-indigo-500 data-is-selected:ring-offset-2 data-is-selected:ring-offset-white"
               >
                 <time
                   dateTime={day.date}
-                  className="relative group-not-data-is-current-month:opacity-75 in-data-is-today:flex in-data-is-today:size-6 in-data-is-today:items-center in-data-is-today:justify-center in-data-is-today:rounded-full in-data-is-today:bg-indigo-600 in-data-is-today:font-semibold in-data-is-today:text-white"
+                  className="relative group-not-data-is-current-month:opacity-75 in-data-is-selected:flex in-data-is-selected:items-center in-data-is-selected:justify-center in-data-is-selected:rounded-full in-data-is-selected:bg-indigo-600 in-data-is-selected:px-2 in-data-is-selected:py-1 in-data-is-selected:text-sm in-data-is-selected:font-semibold in-data-is-selected:text-white in-data-is-today:flex in-data-is-today:size-6 in-data-is-today:items-center in-data-is-today:justify-center in-data-is-today:rounded-full in-data-is-today:bg-indigo-600 in-data-is-today:font-semibold in-data-is-today:text-white"
                 >
                   {Number(day.date.split('-')[2])}
                 </time>
                 {day.events.length > 0 ? (
-                  <ol className="mt-2">
-                    {day.events.slice(0, 2).map(event => (
-                      <li key={event.id}>
-                        <div className="group flex">
-                          <p className="flex-auto truncate font-medium text-gray-900 group-hover:text-indigo-600">
-                            {event.title}
-                          </p>
-                          <time
-                            dateTime={event.start_at}
-                            className="ml-3 hidden flex-none text-gray-500 group-hover:text-indigo-600 xl:block"
-                          >
-                            {formatTime(event.start_at)}
-                          </time>
-                        </div>
+                  <ol className="mt-3 space-y-2">
+                    {day.events.slice(0, 3).map(occurrence => {
+                      const metadata = getEventMetadataLabel(occurrence);
+                      return (
+                        <li key={`${occurrence.event.id}-${occurrence.occurrenceDate}`} className="text-gray-700">
+                          <div className="flex gap-2">
+                            <span
+                              aria-hidden="true"
+                              className={`mt-1.5 h-1.5 w-1.5 flex-none rounded-full ${getEventAccentClass(occurrence.event.source)}`}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-gray-900 group-hover:text-indigo-600">
+                                {occurrence.event.title}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {getSourceLabel(occurrence.event.source)} • {getOccurrenceTimingLabel(occurrence)}
+                              </p>
+                              {metadata ? (
+                                <p className="text-xs text-gray-400">{metadata}</p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                    {day.events.length > 3 ? (
+                      <li className="text-xs font-medium text-gray-500">
+                        + {day.events.length - 3} dalších
                       </li>
-                    ))}
-                    {day.events.length > 2 ? (
-                      <li className="text-gray-500">+ {day.events.length - 2} dalších</li>
                     ) : null}
                   </ol>
                 ) : null}
@@ -468,8 +973,11 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
                 <span className="sr-only">{day.events.length} událostí</span>
                 {day.events.length > 0 ? (
                   <span className="-mx-0.5 mt-auto flex flex-wrap-reverse">
-                    {day.events.map(event => (
-                      <span key={event.id} className="mx-0.5 mb-1 size-1.5 rounded-full bg-gray-400" />
+                    {day.events.map(occurrence => (
+                      <span
+                        key={`${occurrence.event.id}-${occurrence.occurrenceDate}`}
+                        className={`mx-0.5 mb-1 size-1.5 rounded-full ${getEventAccentClass(occurrence.event.source)}`}
+                      />
                     ))}
                   </span>
                 ) : null}
@@ -485,17 +993,37 @@ export default function Calendar({ activeOrganizationId }: CalendarProps) {
         </div>
         <ol className="divide-y divide-gray-100 overflow-hidden rounded-lg bg-white text-sm shadow-sm outline-1 outline-black/5">
           {selectedEvents.length > 0 ? (
-            selectedEvents.map(event => (
-              <li key={event.id} className="group flex p-4 pr-6 focus-within:bg-gray-50 hover:bg-gray-50">
-                <div className="flex-auto">
-                  <p className="font-semibold text-gray-900">{event.title}</p>
-                  <time dateTime={event.start_at} className="mt-2 flex items-center text-gray-700">
-                    <ClockIcon aria-hidden="true" className="mr-2 size-5 text-gray-400" />
-                    {formatEventTimeRange(event)}
-                  </time>
-                </div>
-              </li>
-            ))
+            selectedEvents.map(occurrence => {
+              const { event } = occurrence;
+              const metadata = getEventMetadataLabel(occurrence);
+              return (
+                <li
+                  key={`${event.id}-${occurrence.occurrenceDate}`}
+                  className="group flex items-start gap-3 p-4 pr-6 focus-within:bg-gray-50 hover:bg-gray-50"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1.5 h-2 w-2 flex-none rounded-full ${getEventAccentClass(event.source)}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900">{event.title}</p>
+                    <p className="text-xs uppercase tracking-wide text-gray-500">
+                      {getSourceLabel(event.source)}
+                    </p>
+                    <time dateTime={event.start_at} className="mt-2 flex items-center text-gray-700">
+                      <ClockIcon aria-hidden="true" className="mr-2 size-5 text-gray-400" />
+                      {getOccurrenceTimingLabel(occurrence)}
+                    </time>
+                    {metadata ? (
+                      <p className="mt-2 text-xs text-gray-500">{metadata}</p>
+                    ) : null}
+                    {event.description ? (
+                      <p className="mt-2 text-sm text-gray-600">{event.description}</p>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })
           ) : (
             <li className="p-4 text-center text-sm text-gray-600">
               {loading ? 'Načítání událostí…' : 'Žádné události pro vybraný den.'}
