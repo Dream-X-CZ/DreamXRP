@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { ArrowLeft, Users, Plus, CheckCircle, Clock, Trash2, CreditCard as Edit, PlayCircle, FileText, GitBranch, GitBranchPlus } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { Project, Employee, ProjectAssignment, Task } from '../types/database';
 import { ArrowLeft, Users, Plus, CheckCircle, Clock, AlertTriangle, Trash2, CreditCard as Edit, PlayCircle, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Project, Employee, ProjectAssignment, Task, Budget } from '../types/database';
@@ -13,6 +16,8 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [assignments, setAssignments] = useState<ProjectAssignment[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [parentProject, setParentProject] = useState<Project | null>(null);
+  const [childProjects, setChildProjects] = useState<Project[]>([]);
   const [linkedBudget, setLinkedBudget] = useState<Budget | null>(null);
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -39,19 +44,39 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
 
   useEffect(() => {
     loadData();
-  }, [project.id]);
+  }, [project.id, project.parent_project_id]);
 
   const loadData = async () => {
     try {
-      const [employeesRes, assignmentsRes, tasksRes] = await Promise.all([
+      const parentProjectPromise = project.parent_project_id
+        ? supabase
+            .from('projects')
+            .select('*')
+            .eq('id', project.parent_project_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null });
+
+      const childProjectsPromise = supabase
+        .from('projects')
+        .select('*')
+        .eq('parent_project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      const [employeesRes, assignmentsRes, tasksRes, parentRes, childRes] = await Promise.all([
         supabase.from('employees').select('*').order('first_name'),
         supabase.from('project_assignments').select('*').eq('project_id', project.id),
-        supabase.from('tasks').select('*').eq('project_id', project.id).order('deadline', { ascending: true })
+        supabase.from('tasks').select('*').eq('project_id', project.id).order('deadline', { ascending: true }),
+        parentProjectPromise,
+        childProjectsPromise
       ]);
 
       if (employeesRes.data) setEmployees(employeesRes.data);
       if (assignmentsRes.data) setAssignments(assignmentsRes.data);
       if (tasksRes.data) setTasks(tasksRes.data);
+      if (parentRes.error) throw parentRes.error;
+      if (childRes.error) throw childRes.error;
+      setParentProject(parentRes.data ?? null);
+      setChildProjects(childRes.data ?? []);
 
       if (project.budget_id) {
         const { data: budgetRows, error: budgetError } = await supabase
@@ -607,6 +632,43 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
                 </div>
               )}
             </div>
+
+        {(parentProject || childProjects.length > 0) && (
+          <div className="mb-4 space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 text-sm font-medium">
+              {parentProject && (
+                <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-purple-700">
+                  <GitBranch className="h-4 w-4" />
+                  <span>Nadřazený projekt: {parentProject.name}</span>
+                </span>
+              )}
+              {childProjects.length > 0 && (
+                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+                  <GitBranchPlus className="h-4 w-4" />
+                  <span>Podprojekty: {childProjects.length}</span>
+                </span>
+              )}
+            </div>
+            {childProjects.length > 0 && (
+              <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                {childProjects.map((child) => (
+                  <span
+                    key={child.id}
+                    className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1"
+                  >
+                    <GitBranch className="h-3 w-3 text-emerald-600" />
+                    <span className="font-medium text-emerald-700">{child.name}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div>
+            <div className="text-sm text-gray-600">Celkem úkolů</div>
+            <div className="text-2xl font-bold text-[#0a192f]">{tasks.length}</div>
 
             <div className="rounded-2xl border border-gray-100 p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Finance</div>

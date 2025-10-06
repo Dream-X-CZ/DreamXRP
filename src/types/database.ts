@@ -77,6 +77,7 @@ export interface Project {
   name: string;
   description?: string;
   budget_id?: string;
+  parent_project_id?: string | null;
   start_date?: string;
   end_date?: string;
   status: 'planning' | 'active' | 'completed' | 'on-hold' | 'cancelled';
