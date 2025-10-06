@@ -1,8 +1,18 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Users, Plus, CheckCircle, Clock, Trash2, CreditCard as Edit, PlayCircle, FileText, GitBranch, GitBranchPlus } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { Project, Employee, ProjectAssignment, Task } from '../types/database';
-import { ArrowLeft, Users, Plus, CheckCircle, Clock, AlertTriangle, Trash2, CreditCard as Edit, PlayCircle, FileText } from 'lucide-react';
+import {
+  ArrowLeft,
+  Users,
+  Plus,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  Trash2,
+  CreditCard as Edit,
+  PlayCircle,
+  FileText,
+  GitBranch,
+  GitBranchPlus
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Project, Employee, ProjectAssignment, Task, Budget } from '../types/database';
 
