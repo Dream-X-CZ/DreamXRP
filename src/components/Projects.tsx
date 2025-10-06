@@ -16,8 +16,9 @@ import {
   Target,
   Info,
   NotebookPen,
-  Search
-
+  Search,
+  GitBranch,
+  GitBranchPlus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
@@ -60,6 +61,7 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
     name: '',
     description: '',
     budget_id: '',
+    parent_project_id: '',
     start_date: '',
     end_date: '',
     status: 'planning' as Project['status'],
@@ -106,8 +108,16 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
       if (budgetsRes.error) throw budgetsRes.error;
 
       setOrganizationId(orgId);
-      setProjects(projectsRes.data || []);
+      const loadedProjects = projectsRes.data || [];
+      setProjects(loadedProjects);
       setBudgets(budgetsRes.data || []);
+
+      if (selectedProject) {
+        const updatedSelected = loadedProjects.find((project) => project.id === selectedProject.id);
+        if (updatedSelected) {
+          setSelectedProject(updatedSelected);
+        }
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -139,6 +149,7 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
       const projectData = {
         ...formData,
         budget_id: formData.budget_id || null,
+        parent_project_id: formData.parent_project_id || null,
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
         user_id: user.id,
@@ -188,6 +199,16 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
     if (stepIndex === 0) {
       if (!formData.name.trim()) {
         errors.push('Název projektu je povinný.');
+      }
+
+      if (editingProject) {
+        if (formData.parent_project_id === editingProject.id) {
+          errors.push('Projekt nemůže být podřízen sám sobě.');
+        }
+
+        if (formData.parent_project_id && editingDescendantIds.has(formData.parent_project_id)) {
+          errors.push('Projekt nemůže být podřízen jednomu ze svých podprojektů.');
+        }
       }
     }
 
@@ -240,6 +261,7 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
       name: project.name,
       description: project.description || '',
       budget_id: project.budget_id || '',
+      parent_project_id: project.parent_project_id || '',
       start_date: project.start_date || '',
       end_date: project.end_date || '',
       status: project.status,
@@ -255,6 +277,7 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
       name: '',
       description: '',
       budget_id: '',
+      parent_project_id: '',
       start_date: '',
       end_date: '',
       status: 'planning',
@@ -391,6 +414,67 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
     return map;
   }, [budgets]);
 
+  const projectsById = useMemo(() => {
+    const map = new Map<string, Project>();
+    projects.forEach((projectItem) => {
+      map.set(projectItem.id, projectItem);
+    });
+    return map;
+  }, [projects]);
+
+  const childCountByParent = useMemo(() => {
+    const counts = new Map<string, number>();
+    projects.forEach((projectItem) => {
+      if (!projectItem.parent_project_id) return;
+      counts.set(
+        projectItem.parent_project_id,
+        (counts.get(projectItem.parent_project_id) || 0) + 1
+      );
+    });
+    return counts;
+  }, [projects]);
+
+  const editingDescendantIds = useMemo(() => {
+    if (!editingProject) return new Set<string>();
+
+    const childrenMap = new Map<string, string[]>();
+    projects.forEach((projectItem) => {
+      if (!projectItem.parent_project_id) return;
+      const siblings = childrenMap.get(projectItem.parent_project_id) || [];
+      siblings.push(projectItem.id);
+      childrenMap.set(projectItem.parent_project_id, siblings);
+    });
+
+    const descendants = new Set<string>();
+    const stack = [editingProject.id];
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      const children = childrenMap.get(current) || [];
+      children.forEach((childId) => {
+        if (descendants.has(childId)) return;
+        descendants.add(childId);
+        stack.push(childId);
+      });
+    }
+
+    return descendants;
+  }, [projects, editingProject]);
+
+  const availableParentProjects = useMemo(() => {
+    const disallowedIds = new Set<string>();
+    if (editingProject) {
+      disallowedIds.add(editingProject.id);
+      editingDescendantIds.forEach((id) => disallowedIds.add(id));
+    }
+
+    return projects
+      .filter((projectItem) => !disallowedIds.has(projectItem.id))
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, 'cs-CZ'));
+  }, [projects, editingProject, editingDescendantIds]);
+
   const filteredProjects = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLocaleLowerCase('cs-CZ');
 
@@ -401,11 +485,14 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
       if (!normalizedSearch) return true;
 
       const budgetName = project.budget_id ? budgetsById.get(project.budget_id)?.name ?? '' : '';
-      const haystack = `${project.name} ${project.description || ''} ${budgetName}`.toLocaleLowerCase('cs-CZ');
+      const parentName = project.parent_project_id
+        ? projectsById.get(project.parent_project_id)?.name ?? ''
+        : '';
+      const haystack = `${project.name} ${project.description || ''} ${budgetName} ${parentName}`.toLocaleLowerCase('cs-CZ');
 
       return haystack.includes(normalizedSearch);
     });
-  }, [projects, statusFilter, searchTerm, budgetsById]);
+  }, [projects, statusFilter, searchTerm, budgetsById, projectsById]);
 
   const hasActiveFilters = statusFilter !== 'all' || searchTerm.trim() !== '';
 
@@ -705,6 +792,24 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                       </select>
                     </div>
                     <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Nadřazený projekt</label>
+                      <select
+                        value={formData.parent_project_id}
+                        onChange={(e) => setFormData({ ...formData, parent_project_id: e.target.value })}
+                        className="w-full rounded-xl border border-gray-200 px-4 py-3 text-base shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/40"
+                      >
+                        <option value="">-- Bez nadřazeného projektu --</option>
+                        {availableParentProjects.map((projectOption) => (
+                          <option key={projectOption.id} value={projectOption.id}>
+                            {projectOption.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500">
+                        Vyberte projekt, pod který chcete tento projekt zařadit.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-700">Status</label>
                       <div className="grid grid-cols-2 gap-2">
                         {[
@@ -890,6 +995,14 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                     <p className="text-white/60">Status</p>
                     <p className="font-semibold">{getStatusText(formData.status)}</p>
                   </div>
+                  {formData.parent_project_id && (
+                    <div>
+                      <p className="text-white/60">Nadřazený projekt</p>
+                      <p className="font-semibold">
+                        {projectsById.get(formData.parent_project_id)?.name || 'Vybraný projekt'}
+                      </p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-white/60">Začátek</p>
@@ -981,17 +1094,37 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
             const remaining = project.total_budget - project.spent_amount;
             const linkedBudget = project.budget_id ? budgetsById.get(project.budget_id) : undefined;
             const isOverBudget = project.total_budget > 0 && project.spent_amount > project.total_budget;
+            const childCount = childCountByParent.get(project.id) ?? 0;
+            const parentProjectName = project.parent_project_id
+              ? projectsById.get(project.parent_project_id)?.name
+              : undefined;
 
             return (
               <div key={project.id} className="rounded-3xl bg-white p-6 shadow transition hover:shadow-lg">
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <h3 className="mb-2 text-xl font-semibold text-[#0a192f]">{project.name}</h3>
-                    {linkedBudget && (
-                      <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                        <NotebookPen className="h-4 w-4" />
-                        <span>{linkedBudget.name}</span>
-                        {linkedBudget.client_name && <span className="text-blue-400">• {linkedBudget.client_name}</span>}
+                    {(linkedBudget || parentProjectName || childCount > 0) && (
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+                        {parentProjectName && (
+                          <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-purple-700">
+                            <GitBranch className="h-4 w-4" />
+                            <span>Součást: {parentProjectName}</span>
+                          </span>
+                        )}
+                        {linkedBudget && (
+                          <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-blue-700">
+                            <NotebookPen className="h-4 w-4" />
+                            <span>{linkedBudget.name}</span>
+                            {linkedBudget.client_name && <span className="text-blue-400">• {linkedBudget.client_name}</span>}
+                          </span>
+                        )}
+                        {childCount > 0 && (
+                          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+                            <GitBranchPlus className="h-4 w-4" />
+                            <span>Podprojekty: {childCount}</span>
+                          </span>
+                        )}
                       </div>
                     )}
                     {project.description && (
