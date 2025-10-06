@@ -159,12 +159,6 @@ export default function Layout({
               onClick={() => onViewChange('calendar')}
             />
             <SidebarButton
-              icon={UserCog}
-              label="Nastavení profilu"
-              isActive={currentView === 'profile-settings'}
-              onClick={() => onViewChange('profile-settings')}
-            />
-            <SidebarButton
               icon={Settings}
               label="Tým"
               isActive={currentView === 'team'}

@@ -31,9 +31,14 @@ interface ProjectsProps {
   activeOrganizationId: string | null;
 }
 
+interface BudgetWithTotals extends Budget {
+  total_amount: number;
+  internal_cost: number;
+}
+
 export default function Projects({ activeOrganizationId }: ProjectsProps) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [budgets, setBudgets] = useState<BudgetWithTotals[]>([]);
   const [loading, setLoading] = useState(true);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -74,6 +79,28 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
     loadData();
   }, [activeOrganizationId]);
 
+  useEffect(() => {
+    if (!formData.budget_id) return;
+
+    const selectedBudget = budgets.find((budget) => budget.id === formData.budget_id);
+    if (!selectedBudget) return;
+
+    setFormData((prev) => {
+      const totalAmount = selectedBudget.total_amount || 0;
+      const internalCost = selectedBudget.internal_cost || 0;
+
+      if (prev.total_budget === totalAmount && prev.spent_amount === internalCost) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        total_budget: totalAmount,
+        spent_amount: internalCost
+      };
+    });
+  }, [formData.budget_id, budgets]);
+
   const loadData = async () => {
     setLoading(true);
 
@@ -107,6 +134,42 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
       if (projectsRes.error) throw projectsRes.error;
       if (budgetsRes.error) throw budgetsRes.error;
 
+      const budgetsData = (budgetsRes.data || []).map<BudgetWithTotals>((budget) => ({
+        ...budget,
+        total_amount: 0,
+        internal_cost: 0
+      }));
+
+      let budgetsWithTotals = budgetsData;
+
+      if (budgetsData.length > 0) {
+        const budgetIds = budgetsData.map((budget) => budget.id);
+        const { data: budgetItemsData, error: budgetItemsError } = await supabase
+          .from('budget_items')
+          .select('budget_id,total_price,internal_total_price')
+          .in('budget_id', budgetIds);
+
+        if (budgetItemsError) throw budgetItemsError;
+
+        const totalsMap = new Map<string, { total: number; internal: number }>();
+
+        (budgetItemsData || []).forEach((item) => {
+          const existing = totalsMap.get(item.budget_id) || { total: 0, internal: 0 };
+          existing.total += Number(item.total_price) || 0;
+          existing.internal += Number(item.internal_total_price) || 0;
+          totalsMap.set(item.budget_id, existing);
+        });
+
+        budgetsWithTotals = budgetsData.map((budget) => {
+          const totals = totalsMap.get(budget.id);
+          return {
+            ...budget,
+            total_amount: totals?.total ?? 0,
+            internal_cost: totals?.internal ?? 0
+          };
+        });
+      }
+
       setOrganizationId(orgId);
       const loadedProjects = projectsRes.data || [];
       setProjects(loadedProjects);
@@ -118,6 +181,9 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
           setSelectedProject(updatedSelected);
         }
       }
+
+      setProjects(projectsRes.data || []);
+      setBudgets(budgetsWithTotals);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -409,7 +475,7 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
   );
 
   const budgetsById = useMemo(() => {
-    const map = new Map<string, Budget>();
+    const map = new Map<string, BudgetWithTotals>();
     budgets.forEach((budget) => map.set(budget.id, budget));
     return map;
   }, [budgets]);
@@ -495,6 +561,9 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
   }, [projects, statusFilter, searchTerm, budgetsById, projectsById]);
 
   const hasActiveFilters = statusFilter !== 'all' || searchTerm.trim() !== '';
+
+  const selectedBudgetForForm = formData.budget_id ? budgetsById.get(formData.budget_id) : undefined;
+  const isBudgetLinked = Boolean(selectedBudgetForForm);
 
 
   const formProgress = useMemo(
@@ -786,7 +855,9 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                         <option value="">-- Vyberte rozpočet --</option>
                         {budgets.map((budget) => (
                           <option key={budget.id} value={budget.id}>
-                            {budget.name} {budget.client_name ? `• ${budget.client_name}` : ''}
+                            {budget.name}
+                            {budget.client_name ? ` • ${budget.client_name}` : ''}
+                            {budget.total_amount > 0 ? ` • ${budget.total_amount.toLocaleString('cs-CZ')} Kč` : ''}
                           </option>
                         ))}
                       </select>
@@ -881,9 +952,19 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                           onChange={(e) =>
                             setFormData({ ...formData, total_budget: parseFloat(e.target.value) || 0 })
                           }
-                          className="w-full rounded-xl border border-gray-200 px-4 py-3 pl-12 text-base shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/40"
+                          disabled={isBudgetLinked}
+                          className={`w-full rounded-xl border px-4 py-3 pl-12 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0a192f]/40 ${
+                            isBudgetLinked
+                              ? 'border-gray-200 bg-gray-100 text-gray-500'
+                              : 'border-gray-200 focus:border-[#0a192f]'
+                          }`}
                         />
                       </div>
+                      {isBudgetLinked && selectedBudgetForForm && (
+                        <p className="text-xs text-gray-500">
+                          Hodnota je převzata z rozpočtu „{selectedBudgetForForm.name}“.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-700">Již vyčerpáno</label>
@@ -899,15 +980,19 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                           onChange={(e) =>
                             setFormData({ ...formData, spent_amount: parseFloat(e.target.value) || 0 })
                           }
-                          className="w-full rounded-xl border border-gray-200 px-4 py-3 pl-12 text-base shadow-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/40"
+                          disabled={isBudgetLinked}
+                          className={`w-full rounded-xl border px-4 py-3 pl-12 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0a192f]/40 ${
+                            isBudgetLinked
+                              ? 'border-gray-200 bg-gray-100 text-gray-500'
+                              : 'border-gray-200 focus:border-[#0a192f]'
+                          }`}
                         />
                       </div>
-                    </div>
-                    <div className="md:col-span-2 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60 p-4 text-sm text-gray-600">
-                      <p>
-                        <strong className="text-[#0a192f]">Tip:</strong> Nastavte realistický finanční plán. Jakmile se blížíte
-                        k vyčerpání rozpočtu, naplánujte revizi.
-                      </p>
+                      {isBudgetLinked && selectedBudgetForForm && (
+                        <p className="text-xs text-gray-500">
+                          Částka odpovídá interním nákladům v rozpočtu.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1037,20 +1122,6 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
               </div>
 
 
-              <div className="rounded-3xl border border-gray-100 bg-white/70 p-6 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <p className="font-semibold text-[#0a192f]">Tip pro lepší výsledek</p>
-                    <p>
-                      Proberte projekt s týmem ještě před spuštěním. Jasně pojmenované cíle a rozpočty ušetří spoustu improvizace
-                      v průběhu.
-                    </p>
-                  </div>
-                </div>
-              </div>
             </aside>
             </div>
           </div>
