@@ -1133,17 +1133,6 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
             </div>
           )}
 
-          <div className="rounded-3xl border border-dashed border-[#0a192f]/30 bg-[#0a192f]/5 p-6 text-sm text-[#0a192f] shadow-sm">
-            <div className="flex items-start gap-3">
-              <Sparkles className="mt-1 h-5 w-5" />
-              <div className="space-y-2">
-                <p className="font-semibold">Tip pro wow efekt</p>
-                <p>
-                  Přidejte ke každé klíčové položce krátké vysvětlení hodnoty pro klienta. Uvidí, co přesně kupuje, a snáze kývne na rozpočet.
-                </p>
-              </div>
-            </div>
-          </div>
         </aside>
       </div>
     </div>

@@ -798,12 +798,6 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                         />
                       </div>
                     </div>
-                    <div className="md:col-span-2 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60 p-4 text-sm text-gray-600">
-                      <p>
-                        <strong className="text-[#0a192f]">Tip:</strong> Nastavte realistický finanční plán. Jakmile se blížíte
-                        k vyčerpání rozpočtu, naplánujte revizi.
-                      </p>
-                    </div>
                   </div>
                 )}
 
@@ -924,20 +918,6 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
               </div>
 
 
-              <div className="rounded-3xl border border-gray-100 bg-white/70 p-6 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <p className="font-semibold text-[#0a192f]">Tip pro lepší výsledek</p>
-                    <p>
-                      Proberte projekt s týmem ještě před spuštěním. Jasně pojmenované cíle a rozpočty ušetří spoustu improvizace
-                      v průběhu.
-                    </p>
-                  </div>
-                </div>
-              </div>
             </aside>
             </div>
           </div>
