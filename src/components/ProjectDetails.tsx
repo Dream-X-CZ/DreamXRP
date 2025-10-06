@@ -605,6 +605,7 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
         </div>
       </div>
 
+
       <div className="mb-6 rounded-3xl bg-white p-6 shadow">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex-1">
@@ -642,6 +643,8 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
                 </div>
               )}
             </div>
+          </div>
+        </div>
 
         {(parentProject || childProjects.length > 0) && (
           <div className="mb-4 space-y-3">
@@ -675,7 +678,7 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
           </div>
         )}
 
-        <div className="grid grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="grid grid-cols-4 gap-4 rounded-lg bg-gray-50 p-4">
           <div>
             <div className="text-sm text-gray-600">Celkem úkolů</div>
             <div className="text-2xl font-bold text-[#0a192f]">{tasks.length}</div>
