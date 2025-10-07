@@ -47,6 +47,8 @@ function App() {
   const [processingInviteId, setProcessingInviteId] = useState<string | null>(null);
   const [memberships, setMemberships] = useState<(OrganizationMember & { organization: Organization | null })[]>([]);
   const [activeOrganizationId, setActiveOrganizationId] = useState<string | null>(null);
+  const [isBudgetEditorWindow, setIsBudgetEditorWindow] = useState(false);
+  const [budgetListRefreshSignal, setBudgetListRefreshSignal] = useState<number>(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -73,6 +75,36 @@ function App() {
       setActiveOrganizationId(null);
     }
   }, [session]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'budget-editor') {
+      setIsBudgetEditorWindow(true);
+      setCurrentView('budgets');
+      setIsCreatingBudget(true);
+      const budgetParam = params.get('budgetId');
+      setEditingBudgetId(budgetParam || null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data?.type === 'budget:saved') {
+        setBudgetListRefreshSignal(Date.now());
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
 
   const loadPendingInvitations = async (user: any) => {
     if (!user?.email) {
@@ -272,19 +304,69 @@ function App() {
   };
 
 
+  const openBudgetEditorWindow = (budgetId?: string | null) => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'budget-editor');
+
+    if (budgetId) {
+      url.searchParams.set('budgetId', budgetId);
+    } else {
+      url.searchParams.delete('budgetId');
+    }
+
+    const editorWindow = window.open(
+      url.toString(),
+      '_blank',
+      'width=1280,height=800,resizable=yes,scrollbars=yes'
+    );
+
+    if (editorWindow) {
+      editorWindow.focus();
+      return true;
+    }
+
+    return false;
+  };
+
   const handleCreateBudget = () => {
-    setIsCreatingBudget(true);
     setEditingBudgetId(null);
+    const opened = openBudgetEditorWindow(null);
+
+    if (!opened) {
+      setCurrentView('budgets');
+      setIsCreatingBudget(true);
+    }
   };
 
   const handleEditBudget = (budgetId: string) => {
     setEditingBudgetId(budgetId);
-    setIsCreatingBudget(true);
+    const opened = openBudgetEditorWindow(budgetId);
+
+    if (!opened) {
+      setCurrentView('budgets');
+      setIsCreatingBudget(true);
+    }
   };
 
   const handleBackToBudgets = () => {
+    if (isBudgetEditorWindow && typeof window !== 'undefined' && window.opener) {
+      window.close();
+      return;
+    }
+
     setIsCreatingBudget(false);
     setEditingBudgetId(null);
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('view');
+      url.searchParams.delete('budgetId');
+      window.history.replaceState({}, '', url.toString());
+    }
   };
 
   const handleDashboardNavigate = (view: string, action?: string) => {
@@ -331,6 +413,7 @@ function App() {
           key={`budget-list-${activeOrganizationId ?? 'none'}`}
           onCreateNew={handleCreateBudget}
           onEditBudget={handleEditBudget}
+          refreshSignal={budgetListRefreshSignal}
         />
       )}
 
