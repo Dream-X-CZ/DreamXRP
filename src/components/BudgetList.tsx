@@ -6,6 +6,7 @@ import { Budget, BudgetItem } from '../types/database';
 interface BudgetListProps {
   onCreateNew: () => void;
   onEditBudget: (budgetId: string) => void;
+  refreshSignal?: number;
 }
 
 interface BudgetWithStats extends Budget {
@@ -15,17 +16,18 @@ interface BudgetWithStats extends Budget {
   items_count?: number;
 }
 
-export default function BudgetList({ onCreateNew, onEditBudget }: BudgetListProps) {
+export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal }: BudgetListProps) {
   const [budgets, setBudgets] = useState<BudgetWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'draft' | 'sent' | 'approved' | 'rejected'>('all');
 
   useEffect(() => {
     loadBudgets();
-  }, []);
+  }, [refreshSignal]);
 
   const loadBudgets = async () => {
     try {
+      setLoading(true);
       const { data: budgetsData, error: budgetsError } = await supabase
         .from('budgets')
         .select('*')
