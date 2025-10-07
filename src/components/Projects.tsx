@@ -1171,7 +1171,19 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
               : undefined;
 
             return (
-              <div key={project.id} className="rounded-3xl bg-white p-6 shadow transition hover:shadow-lg">
+              <div
+                key={project.id}
+                className="rounded-3xl bg-white p-6 shadow transition hover:-translate-y-0.5 hover:shadow-lg cursor-pointer"
+                onClick={() => setSelectedProject(project)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setSelectedProject(project);
+                  }
+                }}
+              >
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <h3 className="mb-2 text-xl font-semibold text-[#0a192f]">{project.name}</h3>
@@ -1208,20 +1220,29 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
                       {getStatusText(project.status)}
                     </span>
                     <button
-                      onClick={() => setSelectedProject(project)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedProject(project);
+                      }}
                       className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50"
                       title="Spravovat tým a úkoly"
                     >
                       <Users className="h-5 w-5" />
                     </button>
                     <button
-                      onClick={() => handleEdit(project)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleEdit(project);
+                      }}
                       className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100"
                     >
                       <Edit className="h-5 w-5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(project.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDelete(project.id);
+                      }}
                       className="rounded-lg p-2 text-red-600 transition hover:bg-red-50"
                     >
                       <Trash2 className="h-5 w-5" />
