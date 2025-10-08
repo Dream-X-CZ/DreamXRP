@@ -129,17 +129,11 @@ export interface ResourcePermission {
   organization_id: string;
   user_id: string;
   resource_type:
-    | 'dashboard'
     | 'budgets'
-    | 'expenses'
-    | 'analytics'
-    | 'employees'
     | 'projects'
-    | 'tasks'
-    | 'calendar'
-    | 'profile'
-    | 'profile-settings'
-    | 'team';
+    | 'expenses'
+    | 'employees'
+    | 'analytics';
   can_view: boolean;
   can_create: boolean;
   can_edit: boolean;
