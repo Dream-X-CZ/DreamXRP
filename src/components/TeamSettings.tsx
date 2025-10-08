@@ -16,17 +16,11 @@ type PermissionValues = {
 type PermissionsFormState = Record<PermissionKey, PermissionValues>;
 
 const resourceSections: { key: PermissionKey; label: string }[] = [
-  { key: 'dashboard', label: 'Dashboard' },
   { key: 'budgets', label: 'Rozpočty' },
-  { key: 'expenses', label: 'Náklady' },
-  { key: 'analytics', label: 'Analytika' },
-  { key: 'employees', label: 'Zaměstnanci' },
   { key: 'projects', label: 'Projekty' },
-  { key: 'tasks', label: 'Úkoly' },
-  { key: 'calendar', label: 'Kalendář' },
-  { key: 'profile', label: 'Profil' },
-  { key: 'profile-settings', label: 'Nastavení profilu' },
-  { key: 'team', label: 'Tým' }
+  { key: 'expenses', label: 'Náklady' },
+  { key: 'employees', label: 'Zaměstnanci' },
+  { key: 'analytics', label: 'Analytika' }
 ];
 
 const defaultPermissionValues: PermissionValues = {
