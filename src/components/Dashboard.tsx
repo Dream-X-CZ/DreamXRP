@@ -13,6 +13,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ensureUserOrganization } from '../lib/organization';
 
 interface DashboardStats {
   totalBudgets: number;
@@ -45,45 +46,77 @@ interface Notification {
 
 interface DashboardProps {
   onNavigate: (view: string, action?: string) => void;
+  activeOrganizationId: string | null;
 }
 
-export default function Dashboard({ onNavigate }: DashboardProps) {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalBudgets: 0,
-    activeBudgets: 0,
-    totalRevenue: 0,
-    revenueChange: 0,
-    totalExpenses: 0,
-    expensesChange: 0,
-    activeProjects: 0,
-    projectsChange: 0,
-    totalEmployees: 0,
-    budgetUtilization: 0,
-    profitMargin: 0
-  });
+const INITIAL_STATS: DashboardStats = {
+  totalBudgets: 0,
+  activeBudgets: 0,
+  totalRevenue: 0,
+  revenueChange: 0,
+  totalExpenses: 0,
+  expensesChange: 0,
+  activeProjects: 0,
+  projectsChange: 0,
+  totalEmployees: 0,
+  budgetUtilization: 0,
+  profitMargin: 0
+};
+
+export default function Dashboard({ onNavigate, activeOrganizationId }: DashboardProps) {
+  const [stats, setStats] = useState<DashboardStats>(INITIAL_STATS);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [activeOrganizationId]);
 
   const loadDashboardData = async () => {
+    setLoading(true);
+
     try {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setStats(INITIAL_STATS);
+        setRecentActivities([]);
+        setNotifications([]);
+        return;
+      }
+
+      const organizationId = await ensureUserOrganization(user.id, activeOrganizationId);
+
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const sixtyDaysAgo = new Date();
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
       const [budgetsRes, expensesRes, projectsRes, employeesRes, recentBudgetsRes, expensesLast30, expensesPrevious30] = await Promise.all([
-        supabase.from('budgets').select('*'),
-        supabase.from('expenses').select('*'),
-        supabase.from('projects').select('*'),
-        supabase.from('employees').select('*'),
-        supabase.from('budgets').select('*').order('created_at', { ascending: false }).limit(5),
-        supabase.from('expenses').select('amount').gte('created_at', thirtyDaysAgo.toISOString()),
-        supabase.from('expenses').select('amount').gte('created_at', sixtyDaysAgo.toISOString()).lt('created_at', thirtyDaysAgo.toISOString())
+        supabase.from('budgets').select('*').eq('organization_id', organizationId),
+        supabase.from('expenses').select('*').eq('organization_id', organizationId),
+        supabase.from('projects').select('*').eq('organization_id', organizationId),
+        supabase.from('employees').select('*').eq('organization_id', organizationId),
+        supabase
+          .from('budgets')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .order('created_at', { ascending: false })
+          .limit(5),
+        supabase
+          .from('expenses')
+          .select('amount')
+          .eq('organization_id', organizationId)
+          .gte('created_at', thirtyDaysAgo.toISOString()),
+        supabase
+          .from('expenses')
+          .select('amount')
+          .eq('organization_id', organizationId)
+          .gte('created_at', sixtyDaysAgo.toISOString())
+          .lt('created_at', thirtyDaysAgo.toISOString())
       ]);
 
       if (budgetsRes.error) throw budgetsRes.error;

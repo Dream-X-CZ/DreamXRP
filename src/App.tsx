@@ -20,6 +20,7 @@ import {
   Organization
 } from './types/database';
 import {
+  ensureUserOrganization,
   getStoredActiveOrganizationId,
   setStoredActiveOrganizationId
 } from './lib/organization';
@@ -137,48 +138,38 @@ function App() {
   };
 
   const initializeDefaultCategories = async (userId: string) => {
-    const { data: memberships, error: membershipError } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', userId);
+    try {
+      const organizationId = await ensureUserOrganization(userId);
 
-    if (membershipError) {
-      console.error('Error checking organization memberships:', membershipError);
-    }
+      const { data: existingCategories, error: categoriesError } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .limit(1);
 
-    if (!memberships || memberships.length === 0) {
-      const { data: newOrg, error: orgError } = await supabase
-        .from('organizations')
-        .insert({ name: 'Moje organizace', owner_id: userId })
-        .select()
-        .single();
-
-      if (!orgError && newOrg) {
-        await supabase.from('organization_members').insert({
-          organization_id: newOrg.id,
-          user_id: userId,
-          role: 'owner'
-        });
+      if (categoriesError) {
+        throw categoriesError;
       }
-    }
 
-    const { data: existingCategories } = await supabase
-      .from('categories')
-      .select('id')
-      .limit(1);
+      if (!existingCategories || existingCategories.length === 0) {
+        const defaultCategories = [
+          'Materiál',
+          'Práce',
+          'Doprava',
+          'Nástroje',
+          'Ostatní'
+        ];
 
-    if (!existingCategories || existingCategories.length === 0) {
-      const defaultCategories = [
-        'Materiál',
-        'Práce',
-        'Doprava',
-        'Nástroje',
-        'Ostatní'
-      ];
-
-      await supabase.from('categories').insert(
-        defaultCategories.map(name => ({ name, user_id: userId }))
-      );
+        await supabase.from('categories').insert(
+          defaultCategories.map(name => ({
+            name,
+            user_id: userId,
+            organization_id: organizationId
+          }))
+        );
+      }
+    } catch (error) {
+      console.error('Error initializing default categories:', error);
     }
   };
 
@@ -405,7 +396,11 @@ function App() {
       pendingInvitationCount={pendingInvitations.length}
     >
       {currentView === 'dashboard' && (
-        <Dashboard key={`dashboard-${activeOrganizationId ?? 'none'}`} onNavigate={handleDashboardNavigate} />
+        <Dashboard
+          key={`dashboard-${activeOrganizationId ?? 'none'}`}
+          onNavigate={handleDashboardNavigate}
+          activeOrganizationId={activeOrganizationId}
+        />
       )}
 
       {currentView === 'budgets' && !isCreatingBudget && (
@@ -414,6 +409,7 @@ function App() {
           onCreateNew={handleCreateBudget}
           onEditBudget={handleEditBudget}
           refreshSignal={budgetListRefreshSignal}
+          activeOrganizationId={activeOrganizationId}
         />
       )}
 
@@ -422,14 +418,21 @@ function App() {
           key={`budget-editor-${activeOrganizationId ?? 'none'}`}
           budgetId={editingBudgetId}
           onBack={handleBackToBudgets}
+          activeOrganizationId={activeOrganizationId}
         />
       )}
 
-      {currentView === 'expenses' && <ExpensesList key={`expenses-${activeOrganizationId ?? 'none'}`} />}
+      {currentView === 'expenses' && (
+        <ExpensesList key={`expenses-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
-      {currentView === 'analytics' && <Analytics key={`analytics-${activeOrganizationId ?? 'none'}`} />}
+      {currentView === 'analytics' && (
+        <Analytics key={`analytics-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
-      {currentView === 'employees' && <Employees key={`employees-${activeOrganizationId ?? 'none'}`} />}
+      {currentView === 'employees' && (
+        <Employees key={`employees-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />
+      )}
 
       {currentView === 'projects' && (
         <Projects key={`projects-${activeOrganizationId ?? 'none'}`} activeOrganizationId={activeOrganizationId} />

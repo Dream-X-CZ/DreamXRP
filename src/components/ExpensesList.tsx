@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react';
 import { Plus, Calendar, DollarSign, Trash2, CreditCard as Edit2, Repeat, CheckCircle, XCircle, Briefcase } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Expense, Category, Project } from '../types/database';
+import { ensureUserOrganization } from '../lib/organization';
 
-export default function ExpensesList() {
+interface ExpensesListProps {
+  activeOrganizationId: string | null;
+}
+
+export default function ExpensesList({ activeOrganizationId }: ExpensesListProps) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -24,27 +29,69 @@ export default function ExpensesList() {
     billed_date: ''
   });
 
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+
   useEffect(() => {
+    const fetchOrganization = async () => {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setOrganizationId(null);
+        setExpenses([]);
+        setCategories([]);
+        setProjects([]);
+        return;
+      }
+
+      const orgId = await ensureUserOrganization(user.id, activeOrganizationId);
+      setOrganizationId(orgId);
+    };
+
+    fetchOrganization();
+  }, [activeOrganizationId]);
+
+  useEffect(() => {
+    if (!organizationId) {
+      setExpenses([]);
+      setCategories([]);
+      setProjects([]);
+      return;
+    }
+
     loadExpenses();
     loadCategories();
     loadProjects();
-  }, []);
+  }, [organizationId]);
 
   const loadExpenses = async () => {
+    if (!organizationId) return;
     const { data } = await supabase
       .from('expenses')
       .select('*')
+      .eq('organization_id', organizationId)
       .order('date', { ascending: false });
     setExpenses(data || []);
   };
 
   const loadCategories = async () => {
-    const { data } = await supabase.from('categories').select('*').order('name');
+    if (!organizationId) return;
+    const { data } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('name');
     setCategories(data || []);
   };
 
   const loadProjects = async () => {
-    const { data } = await supabase.from('projects').select('*').order('name');
+    if (!organizationId) return;
+    const { data } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('name');
     setProjects(data || []);
   };
 
@@ -72,7 +119,7 @@ export default function ExpensesList() {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user || !organizationId) return;
 
       const expenseData = {
         name: formData.name,
@@ -87,6 +134,7 @@ export default function ExpensesList() {
         is_billable: formData.is_billable,
         is_billed: formData.is_billed,
         billed_date: formData.is_billed && formData.billed_date ? formData.billed_date : null,
+        organization_id: organizationId,
       };
 
       if (editingExpense) {
@@ -100,6 +148,7 @@ export default function ExpensesList() {
         const { error } = await supabase.from('expenses').insert({
           ...expenseData,
           user_id: user.id,
+          organization_id: organizationId,
         });
 
         if (error) throw error;
