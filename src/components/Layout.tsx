@@ -179,7 +179,7 @@ export default function Layout({
 
         <main className="flex-1 flex flex-col">
           <header className="px-6 lg:px-10 py-4 border-b border-gray-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-            <div className="max-w-6xl mx-auto flex items-center justify-end">
+            <div className="flex items-center justify-end">
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setMenuOpen(prev => !prev)}
@@ -280,7 +280,7 @@ export default function Layout({
             </div>
           </header>
           <div className="flex-1 px-6 lg:px-10 py-8">
-            <div className="max-w-6xl mx-auto">{children}</div>
+            <div className="w-full">{children}</div>
           </div>
         </main>
       </div>
