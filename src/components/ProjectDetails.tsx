@@ -58,6 +58,7 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
 
   const loadData = async () => {
     try {
+      const organizationId = project.organization_id;
       const parentProjectPromise = project.parent_project_id
         ? supabase
             .from('projects')
@@ -73,7 +74,11 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
         .order('created_at', { ascending: true });
 
       const [employeesRes, assignmentsRes, tasksRes, parentRes, childRes] = await Promise.all([
-        supabase.from('employees').select('*').order('first_name'),
+        supabase
+          .from('employees')
+          .select('*')
+          .order('first_name')
+          .eq('organization_id', organizationId),
         supabase.from('project_assignments').select('*').eq('project_id', project.id),
         supabase.from('tasks').select('*').eq('project_id', project.id).order('deadline', { ascending: true }),
         parentProjectPromise,
@@ -93,6 +98,7 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
           .from('budgets')
           .select('*')
           .eq('id', project.budget_id)
+          .eq('organization_id', organizationId)
           .limit(1);
 
         if (!budgetError && budgetRows && budgetRows.length > 0) {
@@ -449,7 +455,11 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: categories } = await supabase.from('categories').select('*').limit(1);
+      const { data: categories } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('organization_id', project.organization_id)
+        .limit(1);
       if (!categories || categories.length === 0) {
         alert('Nejprve vytvořte alespoň jednu kategorii');
         return;
@@ -462,7 +472,8 @@ export default function ProjectDetails({ project, onBack, onUpdate }: ProjectDet
           name: `Rozpočet - ${project.name}`,
           client_name: project.name,
           status: 'draft',
-          user_id: user.id
+          user_id: user.id,
+          organization_id: project.organization_id
         })
         .select()
         .single();

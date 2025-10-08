@@ -17,13 +17,15 @@ import {
 import { supabase } from '../lib/supabase';
 import { Budget, BudgetItem, Category } from '../types/database';
 import * as XLSX from 'xlsx';
+import { ensureUserOrganization } from '../lib/organization';
 
 interface BudgetEditorProps {
   budgetId: string | null;
   onBack: () => void;
+  activeOrganizationId: string | null;
 }
 
-export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
+export default function BudgetEditor({ budgetId, onBack, activeOrganizationId }: BudgetEditorProps) {
   const [budget, setBudget] = useState<Partial<Budget>>({
     name: '',
     client_name: '',
@@ -35,6 +37,7 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
   const [saving, setSaving] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [stepErrors, setStepErrors] = useState<string[]>([]);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
 
   const statusOptions: { value: Budget['status']; label: string; hint: string }[] = [
     { value: 'draft', label: 'Koncept', hint: 'Pracovní verze pro interní ladění' },
@@ -58,8 +61,28 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
   });
 
   useEffect(() => {
+    const fetchOrganization = async () => {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setOrganizationId(null);
+        setCategories([]);
+        return;
+      }
+
+      const orgId = await ensureUserOrganization(user.id, activeOrganizationId);
+      setOrganizationId(orgId);
+    };
+
+    fetchOrganization();
+  }, [activeOrganizationId]);
+
+  useEffect(() => {
+    if (!organizationId) return;
     loadCategories();
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     if (budgetId) {
@@ -73,7 +96,12 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
   }, [budgetId]);
 
   const loadCategories = async () => {
-    const { data } = await supabase.from('categories').select('*').order('name');
+    if (!organizationId) return;
+    const { data } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('name');
     setCategories(data || []);
   };
 
@@ -159,12 +187,17 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
 
       let currentBudgetId = budgetId;
 
+      if (!organizationId) {
+        throw new Error('Není vybrána žádná organizace');
+      }
+
       if (!budgetId) {
         const { data: newBudget, error: budgetError } = await supabase
           .from('budgets')
           .insert({
             ...budget,
-            user_id: user.id
+            user_id: user.id,
+            organization_id: organizationId
           })
           .select()
           .single();
@@ -176,7 +209,8 @@ export default function BudgetEditor({ budgetId, onBack }: BudgetEditorProps) {
           .from('budgets')
           .update({
             ...budget,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            organization_id: organizationId
           })
           .eq('id', budgetId);
 

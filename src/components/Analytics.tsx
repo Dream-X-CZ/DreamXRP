@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, FileText, PieChart } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ensureUserOrganization } from '../lib/organization';
 
 interface Stats {
   totalBudgets: number;
@@ -13,32 +14,69 @@ interface Stats {
   monthlyData: { month: string; revenue: number; costs: number; profit: number }[];
 }
 
-export default function Analytics() {
-  const [stats, setStats] = useState<Stats>({
-    totalBudgets: 0,
-    totalRevenue: 0,
-    totalCosts: 0,
-    totalProfit: 0,
-    totalExpenses: 0,
-    budgetsByStatus: [],
-    expensesByCategory: [],
-    monthlyData: [],
-  });
+const INITIAL_STATS: Stats = {
+  totalBudgets: 0,
+  totalRevenue: 0,
+  totalCosts: 0,
+  totalProfit: 0,
+  totalExpenses: 0,
+  budgetsByStatus: [],
+  expensesByCategory: [],
+  monthlyData: [],
+};
+
+interface AnalyticsProps {
+  activeOrganizationId: string | null;
+}
+
+export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
+  const [stats, setStats] = useState<Stats>(INITIAL_STATS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadAnalytics();
-  }, []);
+  }, [activeOrganizationId]);
 
   const loadAnalytics = async () => {
+    setLoading(true);
     try {
-      const { data: budgets } = await supabase.from('budgets').select('*');
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
 
-      const { data: budgetItems } = await supabase.from('budget_items').select('*');
+      if (!user) {
+        setStats(INITIAL_STATS);
+        return;
+      }
 
-      const { data: expenses } = await supabase.from('expenses').select('*, categories(name)');
+      const organizationId = await ensureUserOrganization(user.id, activeOrganizationId);
 
-      const { data: categories } = await supabase.from('categories').select('*');
+      const { data: budgets, error: budgetsError } = await supabase
+        .from('budgets')
+        .select('id, status, created_at')
+        .eq('organization_id', organizationId);
+
+      if (budgetsError) throw budgetsError;
+
+      const budgetIds = (budgets ?? []).map(budget => budget.id);
+
+      let budgetItems: any[] = [];
+      if (budgetIds.length > 0) {
+        const { data: budgetItemRows, error: budgetItemsError } = await supabase
+          .from('budget_items')
+          .select('*')
+          .in('budget_id', budgetIds);
+
+        if (budgetItemsError) throw budgetItemsError;
+        budgetItems = budgetItemRows || [];
+      }
+
+      const { data: expenses, error: expensesError } = await supabase
+        .from('expenses')
+        .select('*, categories(name)')
+        .eq('organization_id', organizationId);
+
+      if (expensesError) throw expensesError;
 
       const totalRevenue = budgetItems?.reduce((sum, item) => sum + item.total_price, 0) || 0;
       const totalCosts = budgetItems?.reduce((sum, item) => sum + item.internal_total_price, 0) || 0;

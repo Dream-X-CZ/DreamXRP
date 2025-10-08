@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Employee } from '../types/database';
+import { ensureUserOrganization } from '../lib/organization';
 
-export default function Employees() {
+interface EmployeesProps {
+  activeOrganizationId: string | null;
+}
+
+export default function Employees({ activeOrganizationId }: EmployeesProps) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -18,16 +23,48 @@ export default function Employees() {
     notes: '',
   });
 
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+
   useEffect(() => {
+    const fetchOrganization = async () => {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setOrganizationId(null);
+        setEmployees([]);
+        setLoading(false);
+        return;
+      }
+
+      const orgId = await ensureUserOrganization(user.id, activeOrganizationId);
+      setOrganizationId(orgId);
+    };
+
+    fetchOrganization();
+  }, [activeOrganizationId]);
+
+  useEffect(() => {
+    if (!organizationId) {
+      setEmployees([]);
+      return;
+    }
     loadEmployees();
-  }, []);
+  }, [organizationId]);
 
   const loadEmployees = async () => {
     setLoading(true);
     try {
+      if (!organizationId) {
+        setEmployees([]);
+        return;
+      }
+
       const { data } = await supabase
         .from('employees')
         .select('*')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       setEmployees(data || []);
@@ -43,12 +80,13 @@ export default function Employees() {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!user || !organizationId) throw new Error('Not authenticated');
 
       const employeeData = {
         ...formData,
         hourly_rate: formData.hourly_rate ? parseFloat(formData.hourly_rate) : null,
         user_id: user.id,
+        organization_id: organizationId,
         updated_at: new Date().toISOString(),
       };
 

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Plus, FileText, Calendar, User, Eye, DollarSign, TrendingUp, CheckCircle, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ensureUserOrganization } from '../lib/organization';
 import { Budget, BudgetItem } from '../types/database';
 
 interface BudgetListProps {
   onCreateNew: () => void;
   onEditBudget: (budgetId: string) => void;
   refreshSignal?: number;
+  activeOrganizationId?: string | null;
 }
 
 interface BudgetWithStats extends Budget {
@@ -16,21 +18,32 @@ interface BudgetWithStats extends Budget {
   items_count?: number;
 }
 
-export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal }: BudgetListProps) {
+export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, activeOrganizationId }: BudgetListProps) {
   const [budgets, setBudgets] = useState<BudgetWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'draft' | 'sent' | 'approved' | 'rejected'>('all');
 
   useEffect(() => {
     loadBudgets();
-  }, [refreshSignal]);
+  }, [refreshSignal, activeOrganizationId]);
 
   const loadBudgets = async () => {
     try {
       setLoading(true);
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setBudgets([]);
+        return;
+      }
+
+      const organizationId = await ensureUserOrganization(user.id, activeOrganizationId);
       const { data: budgetsData, error: budgetsError } = await supabase
         .from('budgets')
         .select('*')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (budgetsError) throw budgetsError;

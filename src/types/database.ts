@@ -2,6 +2,7 @@ export interface Category {
   id: string;
   name: string;
   user_id: string;
+  organization_id?: string | null;
   created_at: string;
 }
 
@@ -15,6 +16,7 @@ export interface Budget {
   manager_email?: string;
   status: 'draft' | 'sent' | 'approved' | 'rejected';
   user_id: string;
+  organization_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +49,7 @@ export interface Expense {
   budget_id?: string;
   project_id?: string;
   user_id: string;
+  organization_id?: string | null;
   is_recurring: boolean;
   recurring_frequency?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   next_occurrence?: string;
@@ -59,6 +62,7 @@ export interface Expense {
 export interface Employee {
   id: string;
   user_id: string;
+  organization_id?: string | null;
   first_name: string;
   last_name: string;
   email?: string;
