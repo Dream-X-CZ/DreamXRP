@@ -22,10 +22,11 @@ import { ensureUserOrganization } from '../lib/organization';
 interface BudgetEditorProps {
   budgetId: string | null;
   onBack: () => void;
+  onSaved: () => void;
   activeOrganizationId: string | null;
 }
 
-export default function BudgetEditor({ budgetId, onBack, activeOrganizationId }: BudgetEditorProps) {
+export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganizationId }: BudgetEditorProps) {
   const [budget, setBudget] = useState<Partial<Budget>>({
     name: '',
     client_name: '',
@@ -258,14 +259,7 @@ export default function BudgetEditor({ budgetId, onBack, activeOrganizationId }:
         }
       }
 
-      if (typeof window !== 'undefined' && window.opener) {
-        try {
-          window.opener.postMessage({ type: 'budget:saved' }, window.location.origin);
-        } catch (messageError) {
-          console.error('Error notifying opener about saved budget:', messageError);
-        }
-      }
-
+      onSaved();
       onBack();
       return true;
     } catch (error) {
