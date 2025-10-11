@@ -516,66 +516,67 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   }
 
   return (
-    <div className="space-y-8">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 transition hover:text-[#0a192f]"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        <span>Zpět do přehledu rozpočtů</span>
-      </button>
+    <div className="space-y-8 xl:flex xl:items-start xl:gap-8 xl:space-y-0">
+      <div className="flex-1 space-y-6 lg:space-y-8">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 transition hover:text-[#0a192f]"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Zpět do přehledu rozpočtů</span>
+        </button>
 
-      <div className="relative overflow-hidden rounded-3xl border border-[#0a192f]/10 bg-gradient-to-br from-[#0a192f] via-[#132c4d] to-[#1f4c7f] text-white shadow-xl">
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{ backgroundImage: 'radial-gradient(circle at top, rgba(255,255,255,0.8), transparent 60%)' }}
-        />
-        <div className="relative p-8 lg:p-10">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-xl space-y-4">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide">
-                <Sparkles className="h-4 w-4" />
-                Kreativní rozpočtář
-              </span>
-              <div className="space-y-3">
-                <h1 className="text-3xl font-bold leading-tight md:text-4xl">
-                  Vytvořte nabídku, která klienta nadchne
-                </h1>
-                <p className="text-sm text-slate-200 md:text-base">
-                  Projděte tři rychlé kroky – od základních údajů přes položky až po finální souhrn. V reálném čase uvidíte marži, top kategorie i připravené exporty.
-                </p>
+        <div className="relative overflow-hidden rounded-3xl border border-[#0a192f]/10 bg-gradient-to-br from-[#0a192f] via-[#132c4d] to-[#1f4c7f] text-white shadow-xl">
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{ backgroundImage: 'radial-gradient(circle at top, rgba(255,255,255,0.8), transparent 60%)' }}
+          />
+          <div className="relative p-6 lg:p-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-xl space-y-3">
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide">
+                  <Sparkles className="h-4 w-4" />
+                  Kreativní rozpočtář
+                </span>
+                <div className="space-y-2">
+                  <h1 className="text-2xl font-bold leading-tight md:text-3xl">
+                    Vytvořte nabídku, která klienta nadchne
+                  </h1>
+                  <p className="text-sm text-slate-200 md:text-base">
+                    Projděte tři rychlé kroky – od základních údajů přes položky až po finální souhrn. V reálném čase uvidíte marži, top kategorie i připravené exporty.
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
-                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
-                  Celkem pro klienta
-                  <Wallet className="h-4 w-4 text-white" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
+                    Celkem pro klienta
+                    <Wallet className="h-4 w-4 text-white" />
+                  </div>
+                  <p className="mt-3 text-xl font-semibold md:text-2xl">
+                    {totals.clientTotal.toLocaleString('cs-CZ')} Kč
+                  </p>
+                  <p className="text-xs text-slate-200/80">bez DPH</p>
                 </div>
-                <p className="mt-3 text-2xl font-semibold">
-                  {totals.clientTotal.toLocaleString('cs-CZ')} Kč
-                </p>
-                <p className="text-xs text-slate-200/80">bez DPH</p>
-              </div>
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
-                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
-                  Odhadovaný zisk
-                  <PiggyBank className="h-4 w-4 text-white" />
+                <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
+                    Odhadovaný zisk
+                    <PiggyBank className="h-4 w-4 text-white" />
+                  </div>
+                  <p className="mt-3 text-xl font-semibold md:text-2xl">
+                    {totals.profit.toLocaleString('cs-CZ')} Kč
+                  </p>
+                  <p className="text-xs text-slate-200/80">{marginPercentage.toFixed(1)} % marže</p>
                 </div>
-                <p className="mt-3 text-2xl font-semibold">
-                  {totals.profit.toLocaleString('cs-CZ')} Kč
-                </p>
-                <p className="text-xs text-slate-200/80">{marginPercentage.toFixed(1)} % marže</p>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="space-y-6 xl:space-y-8">
-        <div className="space-y-6">
-          <div className="relative overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-gray-100">
+        <div className="space-y-6 xl:space-y-8">
+          <div className="space-y-6">
+            <div className="relative overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-gray-100">
             <div className="absolute inset-0 bg-gradient-to-br from-[#0a192f]/5 via-transparent to-transparent" />
             <div className="relative space-y-8 p-6 sm:p-8">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1104,89 +1105,88 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
             </div>
           </div>
         </div>
-        <div className="xl:flex xl:justify-end">
-          <aside className="w-full space-y-6 xl:max-w-sm">
-            <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
-                  <BarChart3 className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#0a192f]">Živý přehled</p>
-                  <p className="text-xs text-gray-500">Aktualizuje se podle vyplněných dat.</p>
-                </div>
-              </div>
-              <div className="mt-5 space-y-4 text-sm">
-                <div>
-                  <div className="flex items-center justify-between text-gray-600">
-                    <span>Počet položek</span>
-                    <span className="font-semibold text-[#0a192f]">{items.length}</span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-gray-100">
-                    <div
-                      className="h-full rounded-full bg-[#0a192f]"
-                      style={{ width: `${Math.min(items.length * 20, 100)}%` }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-gray-600">
-                    <span>Průměrná položka</span>
-                    <span className="font-semibold text-[#0a192f]">
-                      {averageItemValue.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} Kč
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-gray-600">
-                    <span>Marže</span>
-                    <span
-                      className={`font-semibold ${
-                        marginPercentage >= 20 ? 'text-emerald-600' : 'text-amber-600'
-                      }`}
-                    >
-                      {marginPercentage.toFixed(1)} %
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-gray-100">
-                    <div
-                      className={`h-full rounded-full ${
-                        marginPercentage >= 20 ? 'bg-emerald-500' : 'bg-amber-500'
-                      }`}
-                      style={{ width: `${Math.min(Math.max(marginPercentage, 0), 100)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {categoryBreakdown.length > 0 && (
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
-                    <Layers className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#0a192f]">Top kategorie</p>
-                    <p className="text-xs text-gray-500">Kde leží největší část rozpočtu.</p>
-                  </div>
-                </div>
-                <ul className="mt-4 space-y-3 text-sm text-gray-600">
-                  {categoryBreakdown.map((category) => (
-                    <li key={category.name} className="flex items-center justify-between">
-                      <span>{category.name}</span>
-                      <span className="font-semibold text-[#0a192f]">
-                        {category.total.toLocaleString('cs-CZ')} Kč
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-          </aside>
         </div>
       </div>
+      <aside className="mt-8 w-full space-y-6 xl:mt-0 xl:w-auto xl:max-w-sm xl:space-y-8 xl:sticky xl:top-24">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
+              <BarChart3 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#0a192f]">Živý přehled</p>
+              <p className="text-xs text-gray-500">Aktualizuje se podle vyplněných dat.</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-4 text-sm">
+            <div>
+              <div className="flex items-center justify-between text-gray-600">
+                <span>Počet položek</span>
+                <span className="font-semibold text-[#0a192f]">{items.length}</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-gray-100">
+                <div
+                  className="h-full rounded-full bg-[#0a192f]"
+                  style={{ width: `${Math.min(items.length * 20, 100)}%` }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between text-gray-600">
+                <span>Průměrná položka</span>
+                <span className="font-semibold text-[#0a192f]">
+                  {averageItemValue.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} Kč
+                </span>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between text-gray-600">
+                <span>Marže</span>
+                <span
+                  className={`font-semibold ${
+                    marginPercentage >= 20 ? 'text-emerald-600' : 'text-amber-600'
+                  }`}
+                >
+                  {marginPercentage.toFixed(1)} %
+                </span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-gray-100">
+                <div
+                  className={`h-full rounded-full ${
+                    marginPercentage >= 20 ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${Math.min(Math.max(marginPercentage, 0), 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {categoryBreakdown.length > 0 && (
+          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-[#0a192f]/10 p-2 text-[#0a192f]">
+                <Layers className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#0a192f]">Top kategorie</p>
+                <p className="text-xs text-gray-500">Kde leží největší část rozpočtu.</p>
+              </div>
+            </div>
+            <ul className="mt-4 space-y-3 text-sm text-gray-600">
+              {categoryBreakdown.map((category) => (
+                <li key={category.name} className="flex items-center justify-between">
+                  <span>{category.name}</span>
+                  <span className="font-semibold text-[#0a192f]">
+                    {category.total.toLocaleString('cs-CZ')} Kč
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+      </aside>
     </div>
   );
 }
