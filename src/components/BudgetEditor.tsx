@@ -920,7 +920,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         value={item.item_name || ''}
                                         onChange={(e) => updateItem(index, 'item_name', e.target.value)}
                                         placeholder={`Položka ${index + 1}`}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[14rem]"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[12rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -929,7 +929,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         onChange={(e) => updateItem(index, 'notes', e.target.value)}
                                         rows={2}
                                         placeholder="Doplňující informace"
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[16rem]"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[14rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
