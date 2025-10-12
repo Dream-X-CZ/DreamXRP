@@ -121,9 +121,20 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !organizationId) return;
 
+      const normalizedAmount = parseFloat(
+        (formData.amount || '')
+          .toString()
+          .replace(',', '.')
+      );
+
+      if (!Number.isFinite(normalizedAmount)) {
+        alert('Zadejte platnou částku.');
+        return;
+      }
+
       const expenseData = {
         name: formData.name,
-        amount: parseFloat(formData.amount),
+        amount: normalizedAmount,
         date: formData.date,
         category_id: formData.category_id,
         project_id: formData.project_id || null,
