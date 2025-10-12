@@ -316,6 +316,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
           }
         }
 
+
         const expenseCandidates = items.filter(
           (item) => item.is_cost || (item.price_per_unit || 0) < 0
         );
@@ -984,6 +985,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
                                         disabled={item.is_cost}
                                         className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 lg:min-w-[7.5rem] ${
+
                                           item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
                                         } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
@@ -996,6 +998,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
                                         disabled={item.is_cost}
                                         className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 lg:min-w-[8.5rem] ${
+
                                           item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
                                         } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
