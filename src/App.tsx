@@ -134,11 +134,19 @@ function App() {
 
       if (!existingCategories || existingCategories.length === 0) {
         const defaultCategories = [
-          'Materiál',
-          'Práce',
-          'Doprava',
-          'Nástroje',
-          'Ostatní'
+          'UI design',
+          'UX research',
+          'Databáze - Supabase Micro',
+          'Doména',
+          'SSL certifikát',
+          'Databáze - Supabase Small',
+          'Databáze - Supabase Medium',
+          'Databáze - Supabase Large',
+          'Emailový hosting',
+          'Konzultace',
+          'Ticket',
+
+          
         ];
 
         await supabase.from('categories').insert(
