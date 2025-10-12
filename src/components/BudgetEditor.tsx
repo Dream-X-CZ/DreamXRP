@@ -58,7 +58,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     internal_quantity: 1,
     internal_total_price: 0,
     profit: 0,
-    order_index: orderIndex
+    order_index: orderIndex,
+    is_cost: false
   });
 
   useEffect(() => {
@@ -125,7 +126,13 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
       if (budgetData) setBudget(budgetData);
       if (itemsData && itemsData.length > 0) {
-        setItems(itemsData);
+        setItems(
+          itemsData.map((item, index) => ({
+            ...item,
+            order_index: index,
+            is_cost: item.is_cost ?? false
+          }))
+        );
       } else {
         setItems([createEmptyItem(0)]);
       }
@@ -140,18 +147,72 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     setItems((prev) => [...prev, createEmptyItem(prev.length)]);
   };
 
-  const updateItem = (index: number, field: string, value: any) => {
+  type EditableField =
+    | 'category_id'
+    | 'item_name'
+    | 'notes'
+    | 'quantity'
+    | 'unit'
+    | 'price_per_unit'
+    | 'internal_quantity'
+    | 'internal_price_per_unit'
+    | 'is_cost';
+
+  const updateItem = (index: number, field: EditableField, value: string | number | boolean) => {
     setItems((prev) => {
       const newItems = [...prev];
-      const item = { ...newItems[index], [field]: value };
+      const item = { ...newItems[index] };
+
+      switch (field) {
+        case 'category_id':
+          item.category_id = typeof value === 'string' ? value : '';
+          break;
+        case 'item_name':
+          item.item_name = typeof value === 'string' ? value : '';
+          break;
+        case 'notes':
+          item.notes = typeof value === 'string' ? value : '';
+          break;
+        case 'unit':
+          item.unit = typeof value === 'string' ? value : '';
+          break;
+        case 'quantity':
+          item.quantity = typeof value === 'number' ? value : Number(value) || 0;
+          break;
+        case 'price_per_unit':
+          item.price_per_unit = typeof value === 'number' ? value : Number(value) || 0;
+          break;
+        case 'internal_quantity':
+          item.internal_quantity = typeof value === 'number' ? value : Number(value) || 0;
+          break;
+        case 'internal_price_per_unit':
+          item.internal_price_per_unit = typeof value === 'number' ? value : Number(value) || 0;
+          break;
+        case 'is_cost':
+          item.is_cost = Boolean(value);
+          break;
+      }
+
+      if (field === 'quantity') {
+        item.internal_quantity = Number(value) || 0;
+      }
+
+      if (!item.is_cost && field === 'internal_quantity') {
+        item.internal_quantity = Number(value) || 0;
+      }
+
+      if (!item.is_cost && field === 'internal_price_per_unit') {
+        item.internal_price_per_unit = Number(value) || 0;
+      }
+
+      if (item.is_cost) {
+        item.internal_quantity = Number(item.quantity) || 0;
+        item.internal_price_per_unit = Number(item.price_per_unit) || 0;
+      }
 
       const quantity = Number(item.quantity) || 0;
       const pricePerUnit = Number(item.price_per_unit) || 0;
       item.total_price = quantity * pricePerUnit;
-
-      if (field === 'quantity') {
-        item.internal_quantity = value;
-      }
 
       const internalQuantity = Number(item.internal_quantity) || 0;
       const internalPrice = Number(item.internal_price_per_unit) || 0;
@@ -221,24 +282,50 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       if (currentBudgetId) {
         await supabase.from('budget_items').delete().eq('budget_id', currentBudgetId);
 
-        const itemsToInsert = items.map((item, index) => ({
-          ...item,
-          budget_id: currentBudgetId,
-          order_index: index
-        }));
+        const itemsToInsert = items.map((item, index) => {
+          const { is_cost, ...rest } = item;
+          const payload: Partial<BudgetItem> & {
+            budget_id: string;
+            order_index: number;
+            is_cost?: boolean;
+          } = {
+            ...rest,
+            budget_id: currentBudgetId,
+            order_index: index
+          };
 
-        const { error: itemsError } = await supabase
-          .from('budget_items')
-          .insert(itemsToInsert);
+          if (typeof is_cost === 'boolean') {
+            payload.is_cost = is_cost;
+          }
 
-        if (itemsError) throw itemsError;
+          return payload;
+        });
 
-        const negativeItems = items.filter((item) => (item.price_per_unit || 0) < 0);
+        const { error: itemsError } = await supabase.from('budget_items').insert(itemsToInsert);
 
-        if (negativeItems.length > 0 && categories.length > 0) {
-          const expensesToCreate = negativeItems.map((item) => ({
+        if (itemsError) {
+          if (itemsError.message?.includes('is_cost')) {
+            const fallbackItems = itemsToInsert.map(({ is_cost: _isCost, ...rest }) => rest);
+            const { error: fallbackError } = await supabase
+              .from('budget_items')
+              .insert(fallbackItems);
+
+            if (fallbackError) throw fallbackError;
+          } else {
+            throw itemsError;
+          }
+        }
+
+        const expenseCandidates = items.filter(
+          (item) => item.is_cost || (item.price_per_unit || 0) < 0
+        );
+
+        if (expenseCandidates.length > 0 && categories.length > 0) {
+          const expensesToCreate = expenseCandidates.map((item) => ({
             name: item.item_name || 'Náklad z rozpočtu',
-            amount: Math.abs(item.total_price || 0),
+            amount: item.is_cost
+              ? Math.abs(item.internal_total_price || 0)
+              : Math.abs(item.total_price || 0),
             date: new Date().toISOString().split('T')[0],
             category_id: item.category_id,
             budget_id: currentBudgetId,
@@ -783,6 +870,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                               <th className="px-4 py-3 text-left">Jednotka</th>
                               <th className="px-4 py-3 text-right">Cena / jednotka</th>
                               <th className="px-4 py-3 text-right">Celkem</th>
+                              <th className="px-4 py-3 text-center text-gray-500">Náklad</th>
                               <th className="px-4 py-3 text-right text-gray-500">Interní počet</th>
                               <th className="px-4 py-3 text-right text-gray-500">Interní cena</th>
                               <th className="px-4 py-3 text-right text-gray-500">Interní celkem</th>
@@ -793,7 +881,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           <tbody className="divide-y divide-gray-100">
                             {items.length === 0 ? (
                               <tr>
-                                <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500">
+                                <td colSpan={14} className="px-4 py-6 text-center text-sm text-gray-500">
                                   Přidejte první položku pomocí tlačítka „Přidat položku“.
                                 </td>
                               </tr>
@@ -832,7 +920,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         value={item.item_name || ''}
                                         onChange={(e) => updateItem(index, 'item_name', e.target.value)}
                                         placeholder={`Položka ${index + 1}`}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[14rem]"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[12rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -841,7 +929,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         onChange={(e) => updateItem(index, 'notes', e.target.value)}
                                         rows={2}
                                         placeholder="Doplňující informace"
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[16rem]"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[14rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -851,7 +939,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         min="0"
                                         value={item.quantity ?? 0}
                                         onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[7rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -859,7 +947,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         type="text"
                                         value={item.unit || ''}
                                         onChange={(e) => updateItem(index, 'unit', e.target.value)}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[6rem]"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[7rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -868,12 +956,23 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         step="0.01"
                                         value={item.price_per_unit ?? 0}
                                         onChange={(e) => updateItem(index, 'price_per_unit', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[8.5rem]"
                                       />
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-3 lg:min-w-[8.5rem]">
                                       <div className="text-right font-semibold text-[#0a192f]">
                                         {totalPrice.toLocaleString('cs-CZ')} Kč
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex justify-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(item.is_cost)}
+                                          onChange={(e) => updateItem(index, 'is_cost', e.target.checked)}
+                                          className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                          title="Označit jako náklad"
+                                        />
                                       </div>
                                     </td>
                                     <td className="px-4 py-3">
@@ -883,7 +982,10 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         min="0"
                                         value={item.internal_quantity ?? 0}
                                         onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        disabled={item.is_cost}
+                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 lg:min-w-[7.5rem] ${
+                                          item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
+                                        } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -892,7 +994,10 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         step="0.01"
                                         value={item.internal_price_per_unit ?? 0}
                                         onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        disabled={item.is_cost}
+                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 lg:min-w-[8.5rem] ${
+                                          item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
+                                        } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -931,7 +1036,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                               <td className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
                                 {totals.clientTotal.toLocaleString('cs-CZ')} Kč
                               </td>
-                              <td colSpan={2} className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
+                              <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
                                 Interní náklady
                               </td>
                               <td className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
@@ -1067,6 +1172,19 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                     </div>
                                   </div>
 
+                                  <div className="space-y-2">
+                                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Náklad</span>
+                                    <label className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(item.is_cost)}
+                                        onChange={(e) => updateItem(index, 'is_cost', e.target.checked)}
+                                        className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                                      />
+                                      <span>Zařadit mezi interní náklady</span>
+                                    </label>
+                                  </div>
+
                                   <div className="grid gap-4 sm:grid-cols-2">
 
                                     <div className="space-y-2">
@@ -1077,7 +1195,10 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         min="0"
                                         value={item.internal_quantity ?? 0}
                                         onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        disabled={item.is_cost}
+                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                                          item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
+                                        } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
                                     </div>
                                     <div className="space-y-2">
@@ -1087,7 +1208,10 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         step="0.01"
                                         value={item.internal_price_per_unit ?? 0}
                                         onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        disabled={item.is_cost}
+                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                                          item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
+                                        } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
                                     </div>
                                   </div>

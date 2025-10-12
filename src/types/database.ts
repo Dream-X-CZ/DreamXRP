@@ -37,6 +37,7 @@ export interface BudgetItem {
   profit: number;
   order_index: number;
   created_at: string;
+  is_cost?: boolean;
 }
 
 export interface Expense {
