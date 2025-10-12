@@ -770,7 +770,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                     </div>
 
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-                      <div className="overflow-x-auto">
+                      <div className="hidden overflow-x-auto lg:block">
                         <table className="w-full table-auto divide-y divide-gray-200 text-sm">
                           <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
@@ -943,6 +943,188 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                             </tr>
                           </tfoot>
                         </table>
+                      </div>
+
+                      <div className="space-y-4 p-4 lg:hidden">
+                        {items.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                            Přidejte první položku pomocí tlačítka „Přidat položku“.
+                          </div>
+                        ) : (
+                          items.map((item, index) => {
+                            const totalPrice = item.total_price || 0;
+                            const internalTotal = item.internal_total_price || 0;
+                            const profitValue = item.profit || 0;
+                            const profitColor =
+                              profitValue < 0
+                                ? 'text-red-600'
+                                : profitValue === 0
+                                ? 'text-gray-600'
+                                : 'text-emerald-600';
+
+                            return (
+                              <div key={index} className="space-y-4 rounded-2xl border border-gray-200 p-4 shadow-sm">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-[#0a192f]/70">
+                                      Položka {index + 1}
+                                    </p>
+                                    <p className="text-base font-semibold text-[#0a192f]">
+                                      {item.item_name?.trim() || 'Nepojmenovaná položka'}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItem(index)}
+                                    className="rounded-lg border border-red-100 p-2 text-red-500 transition hover:bg-red-50"
+                                    aria-label={`Smazat položku ${index + 1}`}
+                                    title="Smazat položku"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+
+                                <div className="grid gap-4">
+                                  <div className="space-y-2">
+                                    <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Kategorie</label>
+                                    <select
+                                      value={item.category_id || ''}
+                                      onChange={(e) => updateItem(index, 'category_id', e.target.value)}
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                    >
+                                      <option value="">Vyberte kategorii…</option>
+                                      {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                          {cat.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Název položky</label>
+                                    <input
+                                      type="text"
+                                      value={item.item_name || ''}
+                                      onChange={(e) => updateItem(index, 'item_name', e.target.value)}
+                                      placeholder={`Položka ${index + 1}`}
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                    />
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Poznámka</label>
+                                    <textarea
+                                      value={item.notes || ''}
+                                      onChange={(e) => updateItem(index, 'notes', e.target.value)}
+                                      rows={3}
+                                      placeholder="Doplňující informace"
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                    />
+                                  </div>
+
+                                  <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Počet</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={item.quantity ?? 0}
+                                        onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Jednotka</label>
+                                      <input
+                                        type="text"
+                                        value={item.unit || ''}
+                                        onChange={(e) => updateItem(index, 'unit', e.target.value)}
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Cena / jednotka</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        value={item.price_per_unit ?? 0}
+                                        onChange={(e) => updateItem(index, 'price_per_unit', parseFloat(e.target.value) || 0)}
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Celkem pro klienta</label>
+                                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-right text-sm font-semibold text-[#0a192f]">
+                                        {totalPrice.toLocaleString('cs-CZ')} Kč
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-4 sm:grid-cols-3">
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní počet</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={item.internal_quantity ?? 0}
+                                        onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
+                                        className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní cena</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        value={item.internal_price_per_unit ?? 0}
+                                        onChange={(e) =>
+                                          updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)
+                                        }
+                                        className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní celkem</label>
+                                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-right text-sm font-semibold text-emerald-600">
+                                        {internalTotal.toLocaleString('cs-CZ')} Kč
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Marže</span>
+                                    <span className={`text-base font-semibold ${profitColor}`}>
+                                      {profitValue.toLocaleString('cs-CZ')} Kč
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+
+                        {items.length > 0 && (
+                          <div className="space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                            <div className="flex items-center justify-between text-sm font-semibold text-[#0a192f]">
+                              <span>Celkem pro klienta</span>
+                              <span>{totals.clientTotal.toLocaleString('cs-CZ')} Kč</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm font-semibold text-[#0a192f]">
+                              <span>Interní náklady</span>
+                              <span>{totals.internalTotal.toLocaleString('cs-CZ')} Kč</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm font-semibold text-emerald-600">
+                              <span>Marže</span>
+                              <span>{totals.profit.toLocaleString('cs-CZ')} Kč</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
