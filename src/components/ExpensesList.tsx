@@ -14,7 +14,7 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
   const [projects, setProjects] = useState<Project[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [formData, setFormData] = useState({
+  const createInitialFormState = () => ({
     name: '',
     amount: '',
     date: new Date().toISOString().split('T')[0],
@@ -28,6 +28,8 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
     is_billed: false,
     billed_date: ''
   });
+
+  const [formData, setFormData] = useState(createInitialFormState);
 
   const [organizationId, setOrganizationId] = useState<string | null>(null);
 
@@ -199,23 +201,12 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
     if (!error) loadExpenses();
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      amount: '',
-      date: new Date().toISOString().split('T')[0],
-      category_id: '',
-      project_id: '',
-      notes: '',
-      is_recurring: false,
-      recurring_frequency: 'monthly',
-      next_occurrence: '',
-      is_billable: false,
-      is_billed: false,
-      billed_date: ''
-    });
-    setShowForm(false);
+  const resetForm = (options?: { keepOpen?: boolean }) => {
+    setFormData(createInitialFormState());
     setEditingExpense(null);
+    if (!options?.keepOpen) {
+      setShowForm(false);
+    }
   };
 
   const getCategoryName = (categoryId: string) => {
@@ -250,8 +241,13 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
         </div>
         <button
           onClick={() => {
-            setShowForm(!showForm);
-            resetForm();
+            if (showForm && !editingExpense) {
+              resetForm();
+              return;
+            }
+
+            resetForm({ keepOpen: true });
+            setShowForm(true);
           }}
           className="flex items-center gap-2 bg-[#0a192f] text-white px-6 py-3 rounded-lg hover:bg-opacity-90 transition"
         >
