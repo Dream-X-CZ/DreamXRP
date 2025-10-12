@@ -516,7 +516,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   }
 
   return (
-    <div className="space-y-8 xl:flex xl:items-start xl:gap-8 xl:space-y-0">
+    <div className="w-full space-y-8 xl:flex xl:items-start xl:gap-8 xl:space-y-0">
       <div className="flex-1 space-y-6 lg:space-y-8">
         <button
           onClick={onBack}
@@ -771,7 +771,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
                       <div className="overflow-x-auto">
-                        <table className="min-w-[1200px] divide-y divide-gray-200 text-sm">
+                        <table className="w-full table-auto divide-y divide-gray-200 text-sm">
                           <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
                               <th className="px-4 py-3 text-left">#</th>
@@ -815,7 +815,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                       <select
                                         value={item.category_id || ''}
                                         onChange={(e) => updateItem(index, 'category_id', e.target.value)}
-                                        className="w-full min-w-[10rem] rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[10rem]"
                                       >
                                         <option value="">Vyberte kategorii…</option>
                                         {categories.map((cat) => (
@@ -831,7 +831,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         value={item.item_name || ''}
                                         onChange={(e) => updateItem(index, 'item_name', e.target.value)}
                                         placeholder={`Položka ${index + 1}`}
-                                        className="w-full min-w-[14rem] rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[14rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -840,7 +840,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         onChange={(e) => updateItem(index, 'notes', e.target.value)}
                                         rows={2}
                                         placeholder="Doplňující informace"
-                                        className="w-full min-w-[16rem] rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[16rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -858,7 +858,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         type="text"
                                         value={item.unit || ''}
                                         onChange={(e) => updateItem(index, 'unit', e.target.value)}
-                                        className="w-full min-w-[6rem] rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[6rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
