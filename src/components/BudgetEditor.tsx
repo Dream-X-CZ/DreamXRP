@@ -771,7 +771,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 shadow-sm lg:bg-white">
 
-                      <div className="hidden overflow-x-auto lg:block">
+                      <div className="overflow-x-auto lg:block">
                         <table className="w-full table-auto divide-y divide-gray-200 text-sm">
                           <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                             <tr>
