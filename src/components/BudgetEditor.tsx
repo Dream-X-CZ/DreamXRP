@@ -253,6 +253,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         throw new Error('Není vybrána žádná organizace');
       }
 
+      const orgId = organizationId;
+
       if (!budgetId) {
         const { data: newBudget, error: budgetError } = await supabase
           .from('budgets')
@@ -321,7 +323,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
           (item) => item.is_cost || (item.price_per_unit || 0) < 0
         );
 
-        if (expenseCandidates.length > 0 && categories.length > 0) {
+        if (expenseCandidates.length > 0) {
           const expensesToCreate = expenseCandidates.map((item) => ({
             name: item.item_name || 'Náklad z rozpočtu',
             amount: item.is_cost
@@ -332,6 +334,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
             budget_id: currentBudgetId,
             notes: `Automaticky vytvořeno z rozpočtu: ${budget.name}. ${item.notes || ''}`,
             user_id: user.id,
+            organization_id: orgId,
             is_recurring: false,
             is_billable: false,
             is_billed: false
