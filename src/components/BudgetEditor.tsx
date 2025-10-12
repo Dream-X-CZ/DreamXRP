@@ -770,6 +770,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                     </div>
 
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 shadow-sm lg:bg-white">
+
                       <div className="hidden overflow-x-auto lg:block">
                         <table className="w-full table-auto divide-y divide-gray-200 text-sm">
                           <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -946,6 +947,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                       </div>
 
                       <div className="space-y-4 bg-gray-50 p-4 lg:hidden">
+
                         {items.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
                             Přidejte první položku pomocí tlačítka „Přidat položku“.
@@ -967,6 +969,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
                                     <p className="text-xs font-semibold uppercase tracking-wide text-[#0a192f]/70">Položka {index + 1}</p>
+
                                     <p className="text-base font-semibold text-[#0a192f]">
                                       {item.item_name?.trim() || 'Nepojmenovaná položka'}
                                     </p>
@@ -1058,12 +1061,14 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                     <div className="space-y-2">
                                       <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Celkem</label>
                                       <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-right text-sm font-semibold text-[#0a192f]">
+
                                         {totalPrice.toLocaleString('cs-CZ')} Kč
                                       </div>
                                     </div>
                                   </div>
 
                                   <div className="grid gap-4 sm:grid-cols-2">
+
                                     <div className="space-y-2">
                                       <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní počet</label>
                                       <input
@@ -1100,12 +1105,14 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         {profitValue.toLocaleString('cs-CZ')} Kč
                                       </div>
                                     </div>
+
                                   </div>
                                 </div>
                               </div>
                             );
                           })
                         )}
+
                       </div>
                     </div>
                   </div>
