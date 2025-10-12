@@ -961,16 +961,15 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                               profitValue < 0
                                 ? 'text-red-600'
                                 : profitValue === 0
-                                ? 'text-gray-600'
-                                : 'text-emerald-600';
+                                  ? 'text-gray-600'
+                                  : 'text-emerald-600';
 
                             return (
-                              <div key={index} className="space-y-4 rounded-2xl border border-gray-200 p-4 shadow-sm">
+                              <div key={index} className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-[#0a192f]/70">
-                                      Položka {index + 1}
-                                    </p>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-[#0a192f]/70">Položka {index + 1}</p>
+
                                     <p className="text-base font-semibold text-[#0a192f]">
                                       {item.item_name?.trim() || 'Nepojmenovaná položka'}
                                     </p>
@@ -1060,14 +1059,16 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                       />
                                     </div>
                                     <div className="space-y-2">
-                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Celkem pro klienta</label>
-                                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-right text-sm font-semibold text-[#0a192f]">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Celkem</label>
+                                      <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-right text-sm font-semibold text-[#0a192f]">
+
                                         {totalPrice.toLocaleString('cs-CZ')} Kč
                                       </div>
                                     </div>
                                   </div>
 
-                                  <div className="grid gap-4 sm:grid-cols-3">
+                                  <div className="grid gap-4 sm:grid-cols-2">
+
                                     <div className="space-y-2">
                                       <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní počet</label>
                                       <input
@@ -1085,25 +1086,26 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         type="number"
                                         step="0.01"
                                         value={item.internal_price_per_unit ?? 0}
-                                        onChange={(e) =>
-                                          updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)
-                                        }
+                                        onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
                                         className="w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                                       />
                                     </div>
+                                  </div>
+
+                                  <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
                                       <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní celkem</label>
-                                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-right text-sm font-semibold text-emerald-600">
+                                      <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-right text-sm font-semibold text-emerald-600">
                                         {internalTotal.toLocaleString('cs-CZ')} Kč
                                       </div>
                                     </div>
-                                  </div>
+                                    <div className="space-y-2">
+                                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Marže</label>
+                                      <div className={`rounded-lg border px-3 py-2 text-right text-sm font-semibold ${profitColor}`}>
+                                        {profitValue.toLocaleString('cs-CZ')} Kč
+                                      </div>
+                                    </div>
 
-                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Marže</span>
-                                    <span className={`text-base font-semibold ${profitColor}`}>
-                                      {profitValue.toLocaleString('cs-CZ')} Kč
-                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -1111,22 +1113,6 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           })
                         )}
 
-                        {items.length > 0 && (
-                          <div className="space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                            <div className="flex items-center justify-between text-sm font-semibold text-[#0a192f]">
-                              <span>Celkem pro klienta</span>
-                              <span>{totals.clientTotal.toLocaleString('cs-CZ')} Kč</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm font-semibold text-[#0a192f]">
-                              <span>Interní náklady</span>
-                              <span>{totals.internalTotal.toLocaleString('cs-CZ')} Kč</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm font-semibold text-emerald-600">
-                              <span>Marže</span>
-                              <span>{totals.profit.toLocaleString('cs-CZ')} Kč</span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
