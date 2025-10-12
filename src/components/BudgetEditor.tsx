@@ -316,6 +316,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
           }
         }
 
+
         const expenseCandidates = items.filter(
           (item) => item.is_cost || (item.price_per_unit || 0) < 0
         );
@@ -939,7 +940,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         min="0"
                                         value={item.quantity ?? 0}
                                         onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[7rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -947,7 +948,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         type="text"
                                         value={item.unit || ''}
                                         onChange={(e) => updateItem(index, 'unit', e.target.value)}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[6rem]"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[7rem]"
                                       />
                                     </td>
                                     <td className="px-4 py-3">
@@ -956,10 +957,10 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         step="0.01"
                                         value={item.price_per_unit ?? 0}
                                         onChange={(e) => updateItem(index, 'price_per_unit', parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[8.5rem]"
                                       />
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-3 lg:min-w-[8.5rem]">
                                       <div className="text-right font-semibold text-[#0a192f]">
                                         {totalPrice.toLocaleString('cs-CZ')} Kč
                                       </div>
@@ -983,7 +984,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         value={item.internal_quantity ?? 0}
                                         onChange={(e) => updateItem(index, 'internal_quantity', parseFloat(e.target.value) || 0)}
                                         disabled={item.is_cost}
-                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 lg:min-w-[7.5rem] ${
+
                                           item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
                                         } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
@@ -995,7 +997,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         value={item.internal_price_per_unit ?? 0}
                                         onChange={(e) => updateItem(index, 'internal_price_per_unit', parseFloat(e.target.value) || 0)}
                                         disabled={item.is_cost}
-                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                                        className={`w-full rounded-lg border border-emerald-200 px-3 py-2 text-right text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 lg:min-w-[8.5rem] ${
+
                                           item.is_cost ? 'bg-emerald-50 text-emerald-700' : ''
                                         } ${item.is_cost ? 'cursor-not-allowed' : ''}`}
                                       />
