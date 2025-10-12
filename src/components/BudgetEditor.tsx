@@ -48,6 +48,39 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     { value: 'rejected', label: 'Zamítnuto', hint: 'Vyžaduje úpravy nebo revizi' }
   ];
 
+  const NOTES_METADATA_PREFIX = '__budget_meta__:';
+
+  const decodeItemNotes = (rawNotes?: string | null) => {
+    if (!rawNotes) {
+      return { text: '', isCost: false };
+    }
+
+    if (rawNotes.startsWith(NOTES_METADATA_PREFIX)) {
+      try {
+        const parsed = JSON.parse(rawNotes.slice(NOTES_METADATA_PREFIX.length));
+        return {
+          text: typeof parsed?.note === 'string' ? parsed.note : '',
+          isCost: Boolean(parsed?.isCost)
+        };
+      } catch (error) {
+        console.warn('Failed to parse budget item metadata, falling back to raw notes.', error);
+      }
+    }
+
+    return { text: rawNotes, isCost: false };
+  };
+
+  const encodeItemNotes = (noteText: string | undefined, isCost: boolean | undefined) => {
+    const sanitizedNote = noteText || '';
+
+    if (!isCost) {
+      return sanitizedNote;
+    }
+
+    const payload = { note: sanitizedNote, isCost: true };
+    return `${NOTES_METADATA_PREFIX}${JSON.stringify(payload)}`;
+  };
+
   const createEmptyItem = (orderIndex: number): Partial<BudgetItem> => ({
     item_name: '',
     unit: 'ks',
@@ -127,11 +160,16 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       if (budgetData) setBudget(budgetData);
       if (itemsData && itemsData.length > 0) {
         setItems(
-          itemsData.map((item, index) => ({
-            ...item,
-            order_index: index,
-            is_cost: item.is_cost ?? false
-          }))
+          itemsData.map((item, index) => {
+            const { text: decodedNote, isCost } = decodeItemNotes(item.notes);
+
+            return {
+              ...item,
+              notes: decodedNote,
+              order_index: index,
+              is_cost: item.is_cost ?? isCost
+            };
+          })
         );
       } else {
         setItems([createEmptyItem(0)]);
@@ -253,6 +291,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         throw new Error('Není vybrána žádná organizace');
       }
 
+      const orgId = organizationId;
+
       if (!budgetId) {
         const { data: newBudget, error: budgetError } = await supabase
           .from('budgets')
@@ -283,20 +323,17 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         await supabase.from('budget_items').delete().eq('budget_id', currentBudgetId);
 
         const itemsToInsert = items.map((item, index) => {
-          const { is_cost, ...rest } = item;
+          const { is_cost, notes, ...rest } = item;
           const payload: Partial<BudgetItem> & {
             budget_id: string;
             order_index: number;
-            is_cost?: boolean;
+            notes?: string;
           } = {
             ...rest,
             budget_id: currentBudgetId,
-            order_index: index
+            order_index: index,
+            notes: encodeItemNotes(notes, is_cost)
           };
-
-          if (typeof is_cost === 'boolean') {
-            payload.is_cost = is_cost;
-          }
 
           return payload;
         });
@@ -304,16 +341,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         const { error: itemsError } = await supabase.from('budget_items').insert(itemsToInsert);
 
         if (itemsError) {
-          if (itemsError.message?.includes('is_cost')) {
-            const fallbackItems = itemsToInsert.map(({ is_cost: _isCost, ...rest }) => rest);
-            const { error: fallbackError } = await supabase
-              .from('budget_items')
-              .insert(fallbackItems);
-
-            if (fallbackError) throw fallbackError;
-          } else {
-            throw itemsError;
-          }
+          throw itemsError;
         }
 
 
@@ -321,7 +349,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
           (item) => item.is_cost || (item.price_per_unit || 0) < 0
         );
 
-        if (expenseCandidates.length > 0 && categories.length > 0) {
+        if (expenseCandidates.length > 0) {
           const expensesToCreate = expenseCandidates.map((item) => ({
             name: item.item_name || 'Náklad z rozpočtu',
             amount: item.is_cost
@@ -332,6 +360,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
             budget_id: currentBudgetId,
             notes: `Automaticky vytvořeno z rozpočtu: ${budget.name}. ${item.notes || ''}`,
             user_id: user.id,
+            organization_id: orgId,
             is_recurring: false,
             is_billable: false,
             is_billed: false
