@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase';
 import { Budget, BudgetItem, Category } from '../types/database';
 import * as XLSX from 'xlsx';
 import { ensureUserOrganization } from '../lib/organization';
+import { isValidUuid } from '../lib/uuid';
 
 interface BudgetEditorProps {
   budgetId: string | null;
@@ -87,8 +88,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   }, [organizationId]);
 
   useEffect(() => {
-    if (budgetId) {
-      loadBudget();
+    if (budgetId && isValidUuid(budgetId)) {
+      loadBudget(budgetId);
     } else {
       setBudget({ name: '', client_name: '', status: 'draft' });
       setItems([createEmptyItem(0)]);
@@ -107,21 +108,20 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     setCategories(data || []);
   };
 
-  const loadBudget = async () => {
-    if (!budgetId) return;
+  const loadBudget = async (id: string) => {
     setLoading(true);
 
     try {
       const { data: budgetData } = await supabase
         .from('budgets')
         .select('*')
-        .eq('id', budgetId)
+        .eq('id', id)
         .single();
 
       const { data: itemsData } = await supabase
         .from('budget_items')
         .select('*')
-        .eq('budget_id', budgetId)
+        .eq('budget_id', id)
         .order('order_index');
 
       if (budgetData) setBudget(budgetData);

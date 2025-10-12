@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
+import { isValidUuid } from './lib/uuid';
 import AuthForm from './components/AuthForm';
 import Layout from './components/Layout';
 import BudgetList from './components/BudgetList';
@@ -84,7 +85,15 @@ function App() {
       setCurrentView('budgets');
       setIsCreatingBudget(true);
       const budgetParam = params.get('budgetId');
-      setEditingBudgetId(budgetParam || null);
+      const validBudgetId = isValidUuid(budgetParam) ? budgetParam : null;
+      setEditingBudgetId(validBudgetId);
+
+      if (budgetParam && !validBudgetId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'budget-editor');
+        url.searchParams.delete('budgetId');
+        window.history.replaceState({}, '', url.toString());
+      }
     }
   }, []);
 
