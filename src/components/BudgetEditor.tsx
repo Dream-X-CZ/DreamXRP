@@ -769,7 +769,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                       </button>
                     </div>
 
-                    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 shadow-sm lg:bg-white">
+
                       <div className="hidden overflow-x-auto lg:block">
                         <table className="w-full table-auto divide-y divide-gray-200 text-sm">
                           <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -945,7 +946,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                         </table>
                       </div>
 
-                      <div className="space-y-4 p-4 lg:hidden">
+                      <div className="space-y-4 bg-gray-50 p-4 lg:hidden">
+
                         {items.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
                             Přidejte první položku pomocí tlačítka „Přidat položku“.
