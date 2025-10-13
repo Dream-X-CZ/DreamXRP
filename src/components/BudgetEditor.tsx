@@ -398,7 +398,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         await supabase.from('budget_items').delete().eq('budget_id', currentBudgetId);
 
         const itemsToInsert = items.map((item, index) => {
-          const { is_cost, notes, ...rest } = item;
+          const { is_cost, notes, id: _id, created_at: _createdAt, updated_at: _updatedAt, ...rest } = item;
           const payload: Partial<BudgetItem> & {
             budget_id: string;
             order_index: number;
