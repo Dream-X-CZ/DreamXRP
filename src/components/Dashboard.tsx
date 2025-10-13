@@ -96,7 +96,11 @@ export default function Dashboard({ onNavigate, activeOrganizationId }: Dashboar
       sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
       const [budgetsRes, expensesRes, projectsRes, employeesRes, recentBudgetsRes, expensesLast30, expensesPrevious30] = await Promise.all([
-        supabase.from('budgets').select('*').eq('organization_id', organizationId),
+        supabase
+          .from('budgets')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('archived', false),
         supabase.from('expenses').select('*').eq('organization_id', organizationId),
         supabase.from('projects').select('*').eq('organization_id', organizationId),
         supabase.from('employees').select('*').eq('organization_id', organizationId),
@@ -104,6 +108,7 @@ export default function Dashboard({ onNavigate, activeOrganizationId }: Dashboar
           .from('budgets')
           .select('*')
           .eq('organization_id', organizationId)
+          .eq('archived', false)
           .order('created_at', { ascending: false })
           .limit(5),
         supabase
