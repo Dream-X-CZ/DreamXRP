@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,7 +12,9 @@ import {
   BarChart3,
   Target,
   FileSpreadsheet,
-  Info
+  Info,
+  Loader2,
+  X
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Budget, BudgetItem, Category } from '../types/database';
@@ -40,6 +42,13 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   const [currentStep, setCurrentStep] = useState(0);
   const [stepErrors, setStepErrors] = useState<string[]>([]);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [categoryManagerError, setCategoryManagerError] = useState<string | null>(null);
+  const [categorySavingId, setCategorySavingId] = useState<string | 'new' | null>(null);
+  const categoriesLoadedRef = useRef(false);
 
   const statusOptions: { value: Budget['status']; label: string; hint: string }[] = [
     { value: 'draft', label: 'Koncept', hint: 'Pracovní verze pro interní ladění' },
@@ -139,7 +148,25 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       .eq('organization_id', organizationId)
       .order('name');
     setCategories(data || []);
+    categoriesLoadedRef.current = true;
   };
+
+  useEffect(() => {
+    if (!categoriesLoadedRef.current) return;
+
+    setItems((prevItems) => {
+      let hasChanged = false;
+      const normalized = prevItems.map((item) => {
+        if (item.category_id && !categories.some((cat) => cat.id === item.category_id)) {
+          hasChanged = true;
+          return { ...item, category_id: '' };
+        }
+        return item;
+      });
+
+      return hasChanged ? normalized : prevItems;
+    });
+  }, [categories]);
 
   const loadBudget = async (id: string) => {
     setLoading(true);
@@ -385,6 +412,122 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resetCategoryManagerState = () => {
+    setNewCategoryName('');
+    setEditingCategoryId(null);
+    setEditingCategoryName('');
+    setCategoryManagerError(null);
+    setCategorySavingId(null);
+  };
+
+  const handleCreateCategory = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const trimmedName = newCategoryName.trim();
+    if (!trimmedName) {
+      setCategoryManagerError('Název kategorie nemůže být prázdný.');
+      return;
+    }
+
+    if (!organizationId) {
+      setCategoryManagerError('Kategorie lze vytvářet pouze v rámci organizace.');
+      return;
+    }
+
+    try {
+      setCategorySavingId('new');
+      setCategoryManagerError(null);
+
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error('Uživatel není přihlášen.');
+      }
+
+      const { error } = await supabase.from('categories').insert({
+        name: trimmedName,
+        user_id: user.id,
+        organization_id: organizationId
+      });
+
+      if (error) throw error;
+
+      setNewCategoryName('');
+      await loadCategories();
+    } catch (error) {
+      console.error('Error creating category:', error);
+      setCategoryManagerError('Nepodařilo se vytvořit kategorii. Zkuste to prosím znovu.');
+    } finally {
+      setCategorySavingId(null);
+    }
+  };
+
+  const startEditingCategory = (categoryId: string, currentName: string) => {
+    setEditingCategoryId(categoryId);
+    setEditingCategoryName(currentName);
+    setCategoryManagerError(null);
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!editingCategoryId) return;
+
+    const trimmedName = editingCategoryName.trim();
+    if (!trimmedName) {
+      setCategoryManagerError('Název kategorie nemůže být prázdný.');
+      return;
+    }
+
+    try {
+      setCategorySavingId(editingCategoryId);
+      setCategoryManagerError(null);
+
+      const { error } = await supabase
+        .from('categories')
+        .update({ name: trimmedName })
+        .eq('id', editingCategoryId);
+
+      if (error) throw error;
+
+      setEditingCategoryId(null);
+      setEditingCategoryName('');
+      await loadCategories();
+    } catch (error) {
+      console.error('Error updating category:', error);
+      setCategoryManagerError('Úprava kategorie se nezdařila. Zkuste to prosím znovu.');
+    } finally {
+      setCategorySavingId(null);
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!confirm('Opravdu chcete tuto kategorii smazat? Položky s ní spojené zůstanou bez kategorie.')) {
+      return;
+    }
+
+    try {
+      setCategorySavingId(categoryId);
+      setCategoryManagerError(null);
+
+      const { error } = await supabase.from('categories').delete().eq('id', categoryId);
+
+      if (error) throw error;
+
+      if (editingCategoryId === categoryId) {
+        setEditingCategoryId(null);
+        setEditingCategoryName('');
+      }
+
+      await loadCategories();
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      setCategoryManagerError('Smazání kategorie se nezdařilo. Zkuste to prosím znovu.');
+    } finally {
+      setCategorySavingId(null);
     }
   };
 
@@ -876,14 +1019,27 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                         <h3 className="text-lg font-semibold text-[#0a192f]">Položky rozpočtu</h3>
                         <p className="text-sm text-gray-500">Rozepište jednotlivé položky tak, jak je uvidí klient i vaše interní náklady.</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={addNewItem}
-                        className="inline-flex items-center gap-2 rounded-xl border border-[#0a192f]/20 bg-white px-4 py-2 text-sm font-medium text-[#0a192f] shadow-sm transition hover:-translate-y-0.5 hover:border-[#0a192f]"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Přidat položku
-                      </button>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCategoryManager(true);
+                            resetCategoryManagerState();
+                          }}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#0a192f]/10 bg-white px-4 py-2 text-sm font-medium text-[#0a192f] shadow-sm transition hover:-translate-y-0.5 hover:border-[#0a192f]"
+                        >
+                          <Layers className="h-4 w-4" />
+                          Spravovat kategorie
+                        </button>
+                        <button
+                          type="button"
+                          onClick={addNewItem}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#0a192f]/20 bg-white px-4 py-2 text-sm font-medium text-[#0a192f] shadow-sm transition hover:-translate-y-0.5 hover:border-[#0a192f]"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Přidat položku
+                        </button>
+                      </div>
                     </div>
 
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 shadow-sm lg:bg-white">
@@ -1433,7 +1589,133 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         </div>
         </div>
       </div>
-     
+
+      {showCategoryManager && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-8 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-[#0a192f]">Kategorie rozpočtu</h3>
+                <p className="text-sm text-gray-500">Přidejte nové kategorie nebo upravte ty stávající. Změny se projeví okamžitě v rozpočtu.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCategoryManager(false);
+                  resetCategoryManagerState();
+                }}
+                className="rounded-full border border-gray-200 p-1 text-gray-500 transition hover:border-[#0a192f]/30 hover:text-[#0a192f]"
+                aria-label="Zavřít správu kategorií"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {categoryManagerError && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {categoryManagerError}
+              </div>
+            )}
+
+            <div className="mb-6 max-h-64 space-y-2 overflow-y-auto pr-1">
+              {categories.length === 0 ? (
+                <p className="text-sm text-gray-500">Zatím nemáte žádné kategorie. Přidejte první níže.</p>
+              ) : (
+                categories.map((category) => {
+                  const isEditing = editingCategoryId === category.id;
+                  const isSaving = categorySavingId === category.id;
+
+                  return (
+                    <div
+                      key={category.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"
+                    >
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editingCategoryName}
+                          onChange={(e) => setEditingCategoryName(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="text-sm font-medium text-gray-700">{category.name}</span>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleUpdateCategory}
+                              disabled={categorySavingId === category.id}
+                              className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Uložit'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCategoryId(null);
+                                setEditingCategoryName('');
+                              }}
+                              className="rounded-lg bg-white px-3 py-1 text-xs font-semibold text-gray-600 shadow-sm transition hover:bg-gray-100"
+                            >
+                              Zrušit
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => startEditingCategory(category.id, category.name)}
+                              className="rounded-lg bg-white px-3 py-1 text-xs font-semibold text-[#0a192f] shadow-sm transition hover:bg-gray-100"
+                            >
+                              Upravit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(category.id)}
+                              disabled={categorySavingId === category.id}
+                              className="rounded-lg bg-white px-3 py-1 text-xs font-semibold text-red-600 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Smazat'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <form onSubmit={handleCreateCategory} className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Nová kategorie</label>
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Např. Konzultace"
+                  className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={categorySavingId === 'new'}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#0a192f] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a192f]/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {categorySavingId === 'new' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Přidat kategorii
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
