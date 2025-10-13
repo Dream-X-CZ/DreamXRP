@@ -62,7 +62,8 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
       const { data: budgets, error: budgetsError } = await supabase
         .from('budgets')
         .select('id, status, created_at')
-        .eq('organization_id', organizationId);
+        .eq('organization_id', organizationId)
+        .eq('archived', false);
 
       if (budgetsError) throw budgetsError;
 

@@ -1,5 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Plus, FileText, Calendar, User, Eye, DollarSign, TrendingUp, CheckCircle, Clock } from 'lucide-react';
+import {
+  Plus,
+  FileText,
+  Calendar,
+  User,
+  Eye,
+  DollarSign,
+  TrendingUp,
+  CheckCircle,
+  Clock,
+  Archive,
+  ArchiveRestore
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
 import { Budget, BudgetItem } from '../types/database';
@@ -21,7 +33,8 @@ interface BudgetWithStats extends Budget {
 export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, activeOrganizationId }: BudgetListProps) {
   const [budgets, setBudgets] = useState<BudgetWithStats[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'draft' | 'sent' | 'approved' | 'rejected'>('all');
+  const [filter, setFilter] = useState<'all' | 'draft' | 'sent' | 'approved' | 'rejected' | 'archived'>('all');
+  const [updatingBudgetId, setUpdatingBudgetId] = useState<string | null>(null);
 
   useEffect(() => {
     loadBudgets();
@@ -62,6 +75,8 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
 
           return {
             ...budget,
+            archived: budget.archived ?? false,
+            archived_at: budget.archived_at ?? null,
             total_amount,
             internal_cost,
             profit,
@@ -108,13 +123,58 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
     }
   };
 
-  const filteredBudgets = filter === 'all'
-    ? budgets
-    : budgets.filter(b => b.status === filter);
+  const handleArchiveToggle = async (budgetId: string, shouldArchive: boolean) => {
+    try {
+      setUpdatingBudgetId(budgetId);
+      const archivedAtValue = shouldArchive ? new Date().toISOString() : null;
+      const { error } = await supabase
+        .from('budgets')
+        .update({
+          archived: shouldArchive,
+          archived_at: archivedAtValue,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', budgetId);
 
-  const totalRevenue = budgets.reduce((sum, b) => sum + (b.total_amount || 0), 0);
-  const totalCosts = budgets.reduce((sum, b) => sum + (b.internal_cost || 0), 0);
+      if (error) throw error;
+
+      setBudgets((prev) =>
+        prev.map((budget) =>
+          budget.id === budgetId
+            ? { ...budget, archived: shouldArchive, archived_at: archivedAtValue }
+            : budget
+        )
+      );
+    } catch (error) {
+      console.error('Error updating budget archive state:', error);
+      alert('Nepodařilo se aktualizovat archivaci rozpočtu. Zkuste to prosím znovu.');
+    } finally {
+      setUpdatingBudgetId(null);
+    }
+  };
+
+  const activeBudgets = budgets.filter((budget) => !budget.archived);
+  const archivedBudgets = budgets.filter((budget) => budget.archived);
+
+  const filteredBudgets = filter === 'archived'
+    ? archivedBudgets
+    : filter === 'all'
+      ? activeBudgets
+      : activeBudgets.filter((budget) => budget.status === filter);
+
+  const totalRevenue = activeBudgets.reduce((sum, b) => sum + (b.total_amount || 0), 0);
+  const totalCosts = activeBudgets.reduce((sum, b) => sum + (b.internal_cost || 0), 0);
   const totalProfit = totalRevenue - totalCosts;
+
+  const emptyStateTitle = (() => {
+    if (filter === 'all') {
+      return 'Zatím nemáte žádné rozpočty';
+    }
+    if (filter === 'archived') {
+      return 'Žádné archivované rozpočty';
+    }
+    return `Žádné rozpočty ve stavu "${getStatusText(filter)}"`;
+  })();
 
   if (loading) {
     return (
@@ -174,7 +234,7 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
             <FileText className="w-5 h-5 text-gray-600" />
           </div>
           <div className="text-2xl font-bold text-[#0a192f]">
-            {budgets.length}
+            {activeBudgets.length}
           </div>
         </div>
       </div>
@@ -189,7 +249,7 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            Všechny ({budgets.length})
+            Aktivní ({activeBudgets.length})
           </button>
           <button
             onClick={() => setFilter('draft')}
@@ -199,7 +259,7 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            Koncepty ({budgets.filter(b => b.status === 'draft').length})
+            Koncepty ({activeBudgets.filter(b => b.status === 'draft').length})
           </button>
           <button
             onClick={() => setFilter('sent')}
@@ -209,7 +269,7 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            Odeslané ({budgets.filter(b => b.status === 'sent').length})
+            Odeslané ({activeBudgets.filter(b => b.status === 'sent').length})
           </button>
           <button
             onClick={() => setFilter('approved')}
@@ -219,7 +279,7 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            Schválené ({budgets.filter(b => b.status === 'approved').length})
+            Schválené ({activeBudgets.filter(b => b.status === 'approved').length})
           </button>
           <button
             onClick={() => setFilter('rejected')}
@@ -229,7 +289,17 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            Zamítnuté ({budgets.filter(b => b.status === 'rejected').length})
+            Zamítnuté ({activeBudgets.filter(b => b.status === 'rejected').length})
+          </button>
+          <button
+            onClick={() => setFilter('archived')}
+            className={`px-4 py-2 rounded-lg transition ${
+              filter === 'archived'
+                ? 'bg-[#0a192f] text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Archivované ({archivedBudgets.length})
           </button>
         </div>
       </div>
@@ -237,11 +307,11 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
       {filteredBudgets.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {filter === 'all' ? 'Zatím nemáte žádné rozpočty' : `Žádné rozpočty ve stavu "${getStatusText(filter)}"`}
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">{emptyStateTitle}</h3>
           <p className="text-gray-600 mb-6">
-            Vytvořte svůj první rozpočet a začněte spravovat zakázky
+            {filter === 'archived'
+              ? 'Archivujte hotové rozpočty pro přehlednější práci s aktivními zakázkami.'
+              : 'Vytvořte svůj první rozpočet a začněte spravovat zakázky'}
           </p>
           <button
             onClick={onCreateNew}
@@ -258,16 +328,24 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
               className="bg-white rounded-lg shadow hover:shadow-lg transition p-6 cursor-pointer"
               onClick={() => onEditBudget(budget.id)}
             >
-              <div className="flex justify-between items-start mb-4">
+              <div className="flex justify-between items-start mb-4 gap-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
                     <h3 className="text-xl font-semibold text-[#0a192f]">
                       {budget.name}
                     </h3>
-                    <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(budget.status)}`}>
+                    <span
+                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(budget.status)}`}
+                    >
                       {getStatusIcon(budget.status)}
                       {getStatusText(budget.status)}
                     </span>
+                    {budget.archived && (
+                      <span className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                        <Archive className="w-4 h-4" />
+                        Archivováno
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
@@ -294,9 +372,29 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                   </div>
                 </div>
 
-                <button className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition">
-                  <Eye className="w-5 h-5" />
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onEditBudget(budget.id);
+                    }}
+                    title="Zobrazit detail"
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
+                  <button
+                    className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition disabled:opacity-50"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleArchiveToggle(budget.id, !budget.archived);
+                    }}
+                    disabled={updatingBudgetId === budget.id}
+                    title={budget.archived ? 'Obnovit rozpočet' : 'Archivovat rozpočet'}
+                  >
+                    {budget.archived ? <ArchiveRestore className="w-5 h-5" /> : <Archive className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
