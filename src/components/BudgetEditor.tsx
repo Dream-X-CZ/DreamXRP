@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import type { PostgrestError } from '@supabase/supabase-js';
+
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,6 +15,8 @@ import {
   Target,
   FileSpreadsheet,
   Info,
+  Loader2,
+  X
   Archive,
   ArchiveRestore
 
@@ -557,6 +561,39 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       setCategorySavingId(categoryId);
       setCategoryManagerError(null);
 
+      const [{ count: expensesCount, error: expensesError }, { count: budgetItemsCount, error: budgetItemsError }] =
+        await Promise.all([
+          supabase
+            .from('expenses')
+            .select('id', { count: 'exact', head: true })
+            .eq('category_id', categoryId),
+          supabase
+            .from('budget_items')
+            .select('id', { count: 'exact', head: true })
+            .eq('category_id', categoryId)
+        ]);
+
+      if (expensesError) throw expensesError;
+      if (budgetItemsError) throw budgetItemsError;
+
+      const usageMessages: string[] = [];
+
+      if ((expensesCount ?? 0) > 0) {
+        usageMessages.push(`${expensesCount} nákladech`);
+      }
+
+      if ((budgetItemsCount ?? 0) > 0) {
+        usageMessages.push(`${budgetItemsCount} rozpočtových položkách`);
+      }
+
+      if (usageMessages.length > 0) {
+        setCategoryManagerError(
+          `Kategorie je používána v ${usageMessages.join(' a ')}. Než ji smažete, odeberte nebo upravte tyto záznamy.`
+        );
+        return;
+      }
+
+
       const { error } = await supabase.from('categories').delete().eq('id', categoryId);
 
       if (error) throw error;
@@ -569,6 +606,15 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       await loadCategories();
     } catch (error) {
       console.error('Error deleting category:', error);
+
+      if ((error as PostgrestError)?.code === '23503') {
+        setCategoryManagerError(
+          'Tuto kategorii se nepodařilo smazat, protože je používána v existujících záznamech. Zkontrolujte související náklady a rozpočty.'
+        );
+        return;
+      }
+
+
       setCategoryManagerError('Smazání kategorie se nezdařilo. Zkuste to prosím znovu.');
     } finally {
       setCategorySavingId(null);
