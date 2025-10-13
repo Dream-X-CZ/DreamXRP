@@ -69,11 +69,25 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
 
   const loadExpenses = async () => {
     if (!organizationId) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('expenses')
       .select('*')
       .eq('organization_id', organizationId)
       .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Error loading expenses:', error);
+      setExpenses([]);
+      return;
+    }
+
+    const updatesMade = await processRecurringExpenses(data || []);
+
+    if (updatesMade) {
+      await loadExpenses();
+      return;
+    }
+
     setExpenses(data || []);
   };
 
@@ -98,7 +112,7 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
   };
 
   const calculateNextOccurrence = (date: string, frequency: string) => {
-    const current = new Date(date);
+    const current = new Date(`${date}T00:00:00`);
     switch (frequency) {
       case 'weekly':
         current.setDate(current.getDate() + 7);
@@ -114,6 +128,65 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
         break;
     }
     return current.toISOString().split('T')[0];
+  };
+
+  const processRecurringExpenses = async (fetchedExpenses: Expense[]) => {
+    if (!organizationId) return false;
+
+    const today = new Date().toISOString().split('T')[0];
+    let updatesMade = false;
+
+    for (const expense of fetchedExpenses) {
+      if (!expense.is_recurring || !expense.recurring_frequency || !expense.next_occurrence) {
+        continue;
+      }
+
+      let occurrenceDate = expense.next_occurrence;
+      const occurrencesToCreate: string[] = [];
+
+      while (occurrenceDate && occurrenceDate <= today) {
+        occurrencesToCreate.push(occurrenceDate);
+        occurrenceDate = calculateNextOccurrence(occurrenceDate, expense.recurring_frequency);
+      }
+
+      if (occurrencesToCreate.length === 0) continue;
+
+      try {
+        for (const occurrence of occurrencesToCreate) {
+          const { error: insertError } = await supabase.from('expenses').insert({
+            name: expense.name,
+            amount: expense.amount,
+            date: occurrence,
+            category_id: expense.category_id,
+            project_id: expense.project_id ?? null,
+            notes: expense.notes ?? null,
+            is_recurring: false,
+            recurring_frequency: null,
+            next_occurrence: null,
+            is_billable: expense.is_billable ?? false,
+            is_billed: false,
+            billed_date: null,
+            organization_id: expense.organization_id ?? organizationId,
+            user_id: expense.user_id,
+          });
+
+          if (insertError) throw insertError;
+        }
+
+        const { error: updateError } = await supabase
+          .from('expenses')
+          .update({ next_occurrence: occurrenceDate })
+          .eq('id', expense.id);
+
+        if (updateError) throw updateError;
+
+        updatesMade = true;
+      } catch (error) {
+        console.error('Error processing recurring expense:', error);
+      }
+    }
+
+    return updatesMade;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
