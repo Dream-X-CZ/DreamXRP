@@ -14,7 +14,7 @@
     "@headlessui/react": "^2.1.10",
     "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.57.4",
-    "apexcharts": "^3.54.1",
+    "apexcharts": "^5.3.5",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-apexcharts": "^1.7.0",
