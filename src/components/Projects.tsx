@@ -128,6 +128,7 @@ export default function Projects({ activeOrganizationId }: ProjectsProps) {
           .from('budgets')
           .select('*')
           .eq('organization_id', orgId)
+          .eq('archived', false)
           .order('name')
       ]);
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
+
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,6 +17,9 @@ import {
   Info,
   Loader2,
   X
+  Archive,
+  ArchiveRestore
+
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Budget, BudgetItem, Category } from '../types/database';
@@ -34,12 +38,15 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   const [budget, setBudget] = useState<Partial<Budget>>({
     name: '',
     client_name: '',
-    status: 'draft'
+    status: 'draft',
+    archived: false,
+    archived_at: null
   });
   const [items, setItems] = useState<Partial<BudgetItem>[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [stepErrors, setStepErrors] = useState<string[]>([]);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -134,7 +141,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     if (budgetId && isValidUuid(budgetId)) {
       loadBudget(budgetId);
     } else {
-      setBudget({ name: '', client_name: '', status: 'draft' });
+      setBudget({ name: '', client_name: '', status: 'draft', archived: false, archived_at: null });
       setItems([createEmptyItem(0)]);
     }
     setCurrentStep(0);
@@ -185,7 +192,13 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         .eq('budget_id', id)
         .order('order_index');
 
-      if (budgetData) setBudget(budgetData);
+      if (budgetData) {
+        setBudget({
+          ...budgetData,
+          archived: budgetData.archived ?? false,
+          archived_at: budgetData.archived_at ?? null
+        });
+      }
       if (itemsData && itemsData.length > 0) {
         setItems(
           itemsData.map((item, index) => {
@@ -211,6 +224,40 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
   const addNewItem = () => {
     setItems((prev) => [...prev, createEmptyItem(prev.length)]);
+  };
+
+  const handleArchiveToggle = async () => {
+    if (!budgetId) return;
+
+    try {
+      setArchiveLoading(true);
+      const shouldArchive = !budget.archived;
+      const archivedAtValue = shouldArchive ? new Date().toISOString() : null;
+
+      const { error } = await supabase
+        .from('budgets')
+        .update({
+          archived: shouldArchive,
+          archived_at: archivedAtValue,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', budgetId);
+
+      if (error) throw error;
+
+      setBudget((prev) => ({
+        ...prev,
+        archived: shouldArchive,
+        archived_at: archivedAtValue
+      }));
+
+      onSaved();
+    } catch (error) {
+      console.error('Error toggling budget archive state:', error);
+      alert('Archivaci rozpočtu se nepodařilo změnit. Zkuste to prosím znovu.');
+    } finally {
+      setArchiveLoading(false);
+    }
   };
 
   type EditableField =
@@ -546,6 +593,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         return;
       }
 
+
       const { error } = await supabase.from('categories').delete().eq('id', categoryId);
 
       if (error) throw error;
@@ -565,6 +613,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         );
         return;
       }
+
 
       setCategoryManagerError('Smazání kategorie se nezdařilo. Zkuste to prosím znovu.');
     } finally {
@@ -874,6 +923,55 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
             </div>
           </div>
         </div>
+
+        {budgetId && (
+          <div
+            className={`rounded-2xl border p-4 sm:p-5 shadow-sm transition ${
+              budget.archived
+                ? 'border-amber-200/80 bg-amber-50'
+                : 'border-gray-200 bg-white'
+            }`}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#0a192f]">
+                  {budget.archived ? (
+                    <Archive className="h-4 w-4" />
+                  ) : (
+                    <ArchiveRestore className="h-4 w-4" />
+                  )}
+                  {budget.archived ? 'Rozpočet je archivovaný' : 'Archivujte dokončený rozpočet'}
+                </div>
+                <p className="text-sm text-gray-600">
+                  {budget.archived
+                    ? `Rozpočet je skrytý z přehledu aktivních zakázek${
+                        budget.archived_at
+                          ? ` od ${new Date(budget.archived_at).toLocaleDateString('cs-CZ')}`
+                          : ''
+                      }.`
+                    : 'Archivací rozpočet nepřijde o data ani exporty, pouze se přesune do samostatného seznamu.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleArchiveToggle}
+                disabled={archiveLoading}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  budget.archived
+                    ? 'border border-[#0a192f]/20 bg-white text-[#0a192f] hover:border-[#0a192f]'
+                    : 'bg-[#0a192f] text-white shadow-sm hover:bg-[#0c2548]'
+                } ${archiveLoading ? 'opacity-70' : ''}`}
+              >
+                {budget.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                {archiveLoading
+                  ? 'Ukládám…'
+                  : budget.archived
+                    ? 'Obnovit rozpočet'
+                    : 'Archivovat rozpočet'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-6 xl:space-y-8">
           <div className="space-y-6">

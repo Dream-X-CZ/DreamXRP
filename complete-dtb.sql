@@ -36,6 +36,8 @@ CREATE TABLE public.budgets (
   project_manager text,
   manager_email text,
   organization_id uuid,
+  archived boolean DEFAULT false NOT NULL,
+  archived_at timestamp with time zone,
   CONSTRAINT budgets_pkey PRIMARY KEY (id),
   CONSTRAINT budgets_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT budgets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
