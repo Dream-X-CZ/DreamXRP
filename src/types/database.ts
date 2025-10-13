@@ -111,7 +111,9 @@ export interface OrganizationMember {
   role: 'owner' | 'admin' | 'member' | 'viewer';
   created_at: string;
   user?: {
-    email: string;
+    email?: string | null;
+    full_name?: string | null;
+    avatar_url?: string | null;
   };
 }
 

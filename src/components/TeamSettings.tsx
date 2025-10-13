@@ -113,7 +113,13 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
 
       const [orgRes, membersRes, invitationsRes, permissionsRes] = await Promise.all([
         supabase.from('organizations').select('*').eq('id', targetOrganizationId).single(),
-        supabase.from('organization_members').select('*').eq('organization_id', targetOrganizationId),
+        supabase
+          .from('organization_members')
+          .select(
+            `id, organization_id, user_id, role, created_at,
+            user:profiles(full_name, avatar_url)`
+          )
+          .eq('organization_id', targetOrganizationId),
         supabase
           .from('invitations')
           .select('*')
@@ -131,7 +137,56 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
         setOrganizationStatus(null);
         setOrganizationError(null);
       }
-      if (membersRes.data) setMembers(membersRes.data);
+      if (membersRes.data) {
+        const membersData = membersRes.data as OrganizationMember[];
+
+        if (membersData.length > 0) {
+          const userIds = membersData.map(member => member.user_id);
+          let emailMap = new Map<string, string | null>();
+
+          if (userIds.length > 0) {
+            const { data: emailsData, error: emailsError } = await supabase.rpc('get_users_emails', {
+              user_ids: userIds,
+            });
+
+            if (emailsError) {
+              console.error('Error loading member emails:', emailsError);
+            }
+
+            emailMap = new Map<string, string | null>(
+              ((emailsData ?? []) as { user_id: string; email: string | null }[]).map(entry => [
+                entry.user_id,
+                entry.email,
+              ])
+            );
+          }
+
+          const enrichedMembers = membersData.map(member => ({
+            ...member,
+            user: {
+              email: emailMap.get(member.user_id) ?? member.user?.email ?? null,
+              full_name: member.user?.full_name ?? null,
+              avatar_url: member.user?.avatar_url ?? null,
+            },
+          }));
+
+          if (selectedMember) {
+            const updatedSelected = enrichedMembers.find(member => member.id === selectedMember.id) ?? null;
+            if (updatedSelected) {
+              setSelectedMember(updatedSelected);
+            } else {
+              setSelectedMember(null);
+              setShowPermissionsModal(false);
+            }
+          }
+
+          setMembers(enrichedMembers);
+        } else {
+          setMembers([]);
+        }
+      } else {
+        setMembers([]);
+      }
       if (invitationsRes.data) setInvitations(invitationsRes.data);
       if (permissionsRes.data) setPermissions(permissionsRes.data);
 
@@ -520,11 +575,16 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
                     <span className="text-gray-600 font-medium">
-                      {member.user?.email?.charAt(0).toUpperCase() || '?'}
+                      {(member.user?.full_name || member.user?.email || '?').charAt(0).toUpperCase()}
                     </span>
                   </div>
                   <div>
-                    <div className="font-medium text-gray-900">{member.user?.email || 'Neznámý uživatel'}</div>
+                    <div className="font-medium text-gray-900">
+                      {member.user?.full_name || member.user?.email || 'Neznámý uživatel'}
+                    </div>
+                    {member.user?.email && member.user?.full_name && (
+                      <div className="text-sm text-gray-500">{member.user.email}</div>
+                    )}
                     <div className="text-sm text-gray-500">Přidán {new Date(member.created_at).toLocaleDateString('cs-CZ')}</div>
                   </div>
                 </div>
@@ -576,7 +636,7 @@ export default function TeamSettings({ activeOrganizationId, onOrganizationUpdat
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-[#0a192f]">
-                Oprávnění pro {selectedMember.user?.email}
+                Oprávnění pro {selectedMember.user?.full_name || selectedMember.user?.email || 'Neznámý uživatel'}
               </h3>
             </div>
 

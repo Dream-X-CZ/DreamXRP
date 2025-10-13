@@ -204,6 +204,24 @@ CREATE TABLE public.resource_permissions (
   CONSTRAINT resource_permissions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id),
   CONSTRAINT resource_permissions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+
+DROP FUNCTION IF EXISTS public.get_users_emails(uuid[]);
+
+CREATE OR REPLACE FUNCTION public.get_users_emails(user_ids uuid[])
+ RETURNS TABLE(user_id uuid, email text)
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path = auth, public, extensions
+AS $$
+  SELECT u.id AS user_id, u.email
+  FROM auth.users u
+  WHERE user_ids IS NOT NULL
+    AND u.id = ANY(user_ids);
+$$;
+
+REVOKE ALL ON FUNCTION public.get_users_emails(uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_users_emails(uuid[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_users_emails(uuid[]) TO service_role;
 CREATE TABLE public.tasks (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL,
