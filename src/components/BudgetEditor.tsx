@@ -11,7 +11,6 @@ import {
   Wallet,
   PiggyBank,
   Layers,
-  BarChart3,
   Target,
   FileSpreadsheet,
   FileText,
@@ -634,6 +633,23 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       ? `${budget.name || 'Rozpocet'}_kompletni.xlsx`
       : `${budget.name || 'Rozpocet'}_klient.xlsx`;
 
+    const palette = {
+      primary: '0A192F',
+      primaryDark: '081120',
+      accent: '132C4D',
+      accentBright: '1F4C7F',
+      accentSoft: 'E7F0FA',
+      accentSofter: 'F3F8FF',
+      borderStrong: '0F223D',
+      borderSoft: 'CED9E6',
+      zebraLight: 'F8FBFF',
+      zebraDark: 'EDF3FA',
+      noteBg: 'FFF7E6',
+      noteBorder: 'F5C26B',
+      white: 'FFFFFF'
+    } as const;
+
+
     const columnCount = includeInternal ? 10 : 7;
     const padRow = (cells: (string | number)[]) => {
       const padded = [...cells];
@@ -844,6 +860,15 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
     worksheet['!merges'] = merges;
 
+    const rowHeights: XLSX.RowInfo[] = [];
+    rowHeights[0] = { hpt: 36 };
+    rowHeights[1] = { hpt: 24 };
+    rowHeights[headerRowIndex] = { hpt: 26 };
+    rowHeights[totalsRowIndex] = { hpt: 26 };
+    rowHeights[noteRowIndex] = { hpt: 42 };
+    worksheet['!rows'] = rowHeights;
+
+
     if (items.length > 0) {
       worksheet['!autofilter'] = {
         ref: `A${headerRowIndex + 1}:${XLSX.utils.encode_col(columnCount - 1)}${
@@ -853,6 +878,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     }
 
     const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    const numericColumns = includeInternal ? [3, 4, 5, 6, 7, 8] : [3, 4, 5];
     for (let R = 0; R <= range.e.r; R++) {
       for (let C = 0; C <= range.e.c; C++) {
         const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
@@ -863,7 +889,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
         if (R === 0) {
           cell.s = {
-            font: { bold: true, sz: 18, color: { rgb: '1F4E78' } },
+            font: { bold: true, sz: 20, color: { rgb: palette.white } },
+            fill: { fgColor: { rgb: palette.primary } },
             alignment: { horizontal: 'left', vertical: 'center' }
           };
           continue;
@@ -871,7 +898,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
         if (R === 1) {
           cell.s = {
-            font: { italic: true, color: { rgb: '2F5597' } },
+            font: { italic: true, color: { rgb: palette.white } },
+            fill: { fgColor: { rgb: palette.accentBright } },
             alignment: { horizontal: 'left', vertical: 'center' }
           };
           continue;
@@ -879,24 +907,52 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
         if (R >= summaryStartRowIndex && R <= summaryEndRowIndex) {
           const isLabelColumn = C === 0 || C === 3;
+          const isSpacerColumn = C === 2;
+          const isEvenRow = (R - summaryStartRowIndex) % 2 === 0;
+
           cell.s = {
-            font: { bold: isLabelColumn },
-            fill: { fgColor: { rgb: 'F5F7FA' } },
+            font: {
+              bold: isLabelColumn,
+              color: { rgb: palette.primary }
+            },
+            fill: {
+              fgColor: {
+                rgb: isSpacerColumn
+                  ? palette.white
+                  : isEvenRow
+                    ? palette.accentSoft
+                    : palette.accentSofter
+              }
+            },
+            alignment: {
+              horizontal: 'left',
+              vertical: 'center',
+              wrapText: isSpacerColumn ? undefined : true
+            },
             border: {
-              top: { style: 'thin', color: { rgb: 'D9E2EC' } },
-              bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
-              left: { style: 'thin', color: { rgb: 'D9E2EC' } },
-              right: { style: 'thin', color: { rgb: 'D9E2EC' } }
+              top: { style: 'thin', color: { rgb: palette.borderSoft } },
+              bottom: { style: 'thin', color: { rgb: palette.borderSoft } },
+              left: !isSpacerColumn
+                ? { style: 'thin', color: { rgb: palette.borderSoft } }
+                : undefined,
+              right: !isSpacerColumn
+                ? { style: 'thin', color: { rgb: palette.borderSoft } }
+                : undefined
             }
           };
+
           continue;
         }
 
         if (R === totalsHeadingRowIndex) {
           cell.s = {
-            font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: '1F4E78' } },
-            alignment: { horizontal: 'left', vertical: 'center' }
+            font: { bold: true, sz: 13, color: { rgb: palette.white } },
+            fill: { fgColor: { rgb: palette.accent } },
+            alignment: { horizontal: 'left', vertical: 'center' },
+            border: {
+              bottom: { style: 'thin', color: { rgb: palette.borderStrong } }
+
+            }
           };
           continue;
         }
@@ -904,13 +960,23 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         if (R >= financialSummaryStartRowIndex && R <= financialSummaryEndRowIndex) {
           const isLabelColumn = C === 0 || C === 3;
           cell.s = {
-            font: { bold: isLabelColumn },
-            fill: { fgColor: { rgb: 'F7FBFF' } },
+            font: { bold: isLabelColumn, color: { rgb: palette.primary } },
+            fill: {
+              fgColor: {
+                rgb: (R - financialSummaryStartRowIndex) % 2 === 0
+                  ? palette.zebraLight
+                  : palette.zebraDark
+              }
+            },
             border: {
-              top: { style: 'thin', color: { rgb: 'D9E2EC' } },
-              bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
-              left: { style: 'thin', color: { rgb: 'D9E2EC' } },
-              right: { style: 'thin', color: { rgb: 'D9E2EC' } }
+              top: { style: 'thin', color: { rgb: palette.borderSoft } },
+              bottom: { style: 'thin', color: { rgb: palette.borderSoft } },
+              left: { style: 'thin', color: { rgb: palette.borderSoft } },
+              right: { style: 'thin', color: { rgb: palette.borderSoft } }
+            },
+            alignment: {
+              horizontal: C === 1 || C === 4 ? 'right' : 'left',
+              vertical: 'center'
             }
           };
           continue;
@@ -918,14 +984,14 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
         if (R === headerRowIndex) {
           cell.s = {
-            font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: '1F4E78' } },
-            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { bold: true, color: { rgb: palette.white } },
+            fill: { fgColor: { rgb: palette.primary } },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
             border: {
-              top: { style: 'thin', color: { rgb: '1F4E78' } },
-              bottom: { style: 'thin', color: { rgb: '1F4E78' } },
-              left: { style: 'thin', color: { rgb: '1F4E78' } },
-              right: { style: 'thin', color: { rgb: '1F4E78' } }
+              top: { style: 'thin', color: { rgb: palette.primary } },
+              bottom: { style: 'thin', color: { rgb: palette.primary } },
+              left: { style: 'thin', color: { rgb: palette.primary } },
+              right: { style: 'thin', color: { rgb: palette.primary } }
             }
           };
           continue;
@@ -934,14 +1000,22 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         if (R >= dataStartRowIndex && R <= dataEndRowIndex) {
           const isEvenRow = (R - dataStartRowIndex) % 2 === 0;
           cell.s = {
-            fill: isEvenRow ? { fgColor: { rgb: 'FDFEFE' } } : { fgColor: { rgb: 'F4F8FB' } },
+            font: { color: { rgb: palette.primary } },
+            fill: isEvenRow
+              ? { fgColor: { rgb: palette.zebraLight } }
+              : { fgColor: { rgb: palette.zebraDark } },
             border: {
-              top: { style: 'hair', color: { rgb: 'D0D7DE' } },
-              bottom: { style: 'hair', color: { rgb: 'D0D7DE' } },
-              left: { style: 'hair', color: { rgb: 'D0D7DE' } },
-              right: { style: 'hair', color: { rgb: 'D0D7DE' } }
+              top: { style: 'hair', color: { rgb: palette.borderSoft } },
+              bottom: { style: 'hair', color: { rgb: palette.borderSoft } },
+              left: { style: 'hair', color: { rgb: palette.borderSoft } },
+              right: { style: 'hair', color: { rgb: palette.borderSoft } }
             },
-            alignment: { vertical: 'center', horizontal: C >= 4 ? 'right' : 'left' }
+            alignment: {
+              vertical: 'center',
+              horizontal: numericColumns.includes(C) ? 'right' : 'left',
+              wrapText: C === columnCount - 1 ? true : undefined
+            }
+
           };
           continue;
         }
@@ -949,15 +1023,19 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         if (R === totalsRowIndex) {
           const isLabelColumn = C === 0;
           cell.s = {
-            font: { bold: !isLabelColumn },
-            fill: { fgColor: { rgb: 'E8F4F8' } },
+            font: { bold: true, color: { rgb: palette.accent } },
+            fill: { fgColor: { rgb: palette.accentSoft } },
             border: {
-              top: { style: 'medium', color: { rgb: '1F4E78' } },
-              bottom: { style: 'medium', color: { rgb: '1F4E78' } },
-              left: { style: 'thin', color: { rgb: '1F4E78' } },
-              right: { style: 'thin', color: { rgb: '1F4E78' } }
+              top: { style: 'medium', color: { rgb: palette.accent } },
+              bottom: { style: 'medium', color: { rgb: palette.accent } },
+              left: { style: 'thin', color: { rgb: palette.accent } },
+              right: { style: 'thin', color: { rgb: palette.accent } }
             },
-            alignment: { horizontal: isLabelColumn ? 'left' : 'right', vertical: 'center' }
+            alignment: {
+              horizontal: isLabelColumn ? 'left' : 'right',
+              vertical: 'center'
+
+            }
           };
           continue;
         }
@@ -965,14 +1043,15 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         if (R === noteRowIndex) {
           const isLabelColumn = C === 0;
           cell.s = {
-            font: { bold: isLabelColumn },
-            fill: { fgColor: { rgb: 'FFF4E5' } },
+            font: { bold: isLabelColumn, color: { rgb: palette.primary } },
+            fill: { fgColor: { rgb: palette.noteBg } },
             alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
             border: {
-              top: { style: 'thin', color: { rgb: 'F7C566' } },
-              bottom: { style: 'thin', color: { rgb: 'F7C566' } },
-              left: { style: 'thin', color: { rgb: 'F7C566' } },
-              right: { style: 'thin', color: { rgb: 'F7C566' } }
+              top: { style: 'thin', color: { rgb: palette.noteBorder } },
+              bottom: { style: 'thin', color: { rgb: palette.noteBorder } },
+              left: { style: 'thin', color: { rgb: palette.noteBorder } },
+              right: { style: 'thin', color: { rgb: palette.noteBorder } }
+
             }
           };
         }
