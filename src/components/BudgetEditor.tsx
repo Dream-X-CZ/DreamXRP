@@ -621,97 +621,357 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     }
   };
 
+  const statusLabels: Record<Budget['status'], string> = {
+    draft: 'Koncept',
+    sent: 'Odesláno klientovi',
+    approved: 'Schváleno',
+    rejected: 'Zamítnuto'
+  };
+
   const exportToExcel = (includeInternal: boolean) => {
     const fileName = includeInternal
       ? `${budget.name || 'Rozpocet'}_kompletni.xlsx`
       : `${budget.name || 'Rozpocet'}_klient.xlsx`;
 
-    const worksheetData: any[] = [
-      ['Klient', budget.client_name || '', '', 'E-mail', budget.client_email || '', '', 'Projektový manažer', budget.project_manager || ''],
-      ['Projekt', budget.name || '', '', 'Datum zahájení', new Date().toLocaleDateString('cs-CZ'), '', 'E-mail', budget.manager_email || ''],
-      ['Typ projektu', '', '', 'Datum ukončení', '', '', '', ''],
-      []
+    const columnCount = includeInternal ? 10 : 7;
+    const padRow = (cells: (string | number)[]) => {
+      const padded = [...cells];
+      while (padded.length < columnCount) {
+        padded.push('');
+      }
+      return padded;
+    };
+
+    const formatCurrency = (value: number) =>
+      new Intl.NumberFormat('cs-CZ', {
+        style: 'currency',
+        currency: 'CZK',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(value || 0);
+
+    const budgetStatusLabel = budget.status
+      ? statusLabels[budget.status as Budget['status']]
+      : '—';
+    const exportDate = new Intl.DateTimeFormat('cs-CZ').format(new Date());
+    const vatAmount = projectedVatTotal - totals.clientTotal;
+    const profitPerItem = items.length > 0 ? totals.profit / items.length : 0;
+
+    const worksheetData: any[] = [];
+
+    worksheetData.push(padRow([budget.name ? `Rozpočet projektu: ${budget.name}` : 'Rozpočet projektu']));
+    worksheetData.push(
+      padRow([
+        includeInternal
+          ? 'Interní verze s nákladovostí a marží'
+          : 'Klientská verze připravená k prezentaci'
+      ])
+    );
+    worksheetData.push(padRow([]));
+
+    const summaryPairs: Array<[string, string]> = [
+      ['Klient', budget.client_name || '—'],
+      ['Projekt', budget.name || '—'],
+      ['Kontaktní osoba', budget.contact_person || '—'],
+      ['E-mail klienta', budget.client_email || '—'],
+      ['Projektový manažer', budget.project_manager || '—'],
+      ['E-mail manažera', budget.manager_email || '—'],
+      ['Stav rozpočtu', budgetStatusLabel],
+      ['Datum exportu', exportDate]
     ];
 
-    worksheetData.push([]);
-    worksheetData.push(['', '', '', '', '', 'Rozpočet', '', '']);
+    const summaryStartRowIndex = worksheetData.length;
+    for (let index = 0; index < summaryPairs.length; index += 2) {
+      const left = summaryPairs[index];
+      const right = summaryPairs[index + 1];
+      worksheetData.push(
+        padRow([left[0], left[1], '', right ? right[0] : '', right ? right[1] : ''])
+      );
+    }
+    const summaryEndRowIndex = worksheetData.length - 1;
 
-    const headers = ['Kategorie', 'Položka', 'Jednotka', 'Počet', 'Kč / jednotka', 'Kč celkem bez DPH', '', 'Poznámka'];
-    worksheetData.push(headers);
+    worksheetData.push(padRow([]));
+
+    const financialSummaryPairs: Array<[string, string]> = [
+      ['Celkem pro klienta (bez DPH)', formatCurrency(totals.clientTotal)],
+      ['Odhadovaná DPH (21 %)', formatCurrency(vatAmount)],
+      ['Celkem pro klienta (s DPH)', formatCurrency(projectedVatTotal)],
+      ['Průměrná hodnota položky', formatCurrency(averageItemValue)]
+    ];
+
+    if (includeInternal) {
+      financialSummaryPairs.push(
+        ['Interní náklady', formatCurrency(totals.internalTotal)],
+        ['Zisk (Kč)', formatCurrency(totals.profit)],
+        ['Marže (%)', `${marginPercentage.toFixed(1)} %`],
+        ['Zisk na položku', formatCurrency(profitPerItem)]
+      );
+    }
+
+    const totalsHeadingRowIndex = worksheetData.length;
+    worksheetData.push(padRow(['Finanční shrnutí']));
+
+    const financialSummaryStartRowIndex = worksheetData.length;
+    for (let index = 0; index < financialSummaryPairs.length; index += 2) {
+      const left = financialSummaryPairs[index];
+      const right = financialSummaryPairs[index + 1];
+      worksheetData.push(
+        padRow([left[0], left[1], '', right ? right[0] : '', right ? right[1] : ''])
+      );
+    }
+    const financialSummaryEndRowIndex = worksheetData.length - 1;
+
+    worksheetData.push(padRow([]));
+
+    const headers = includeInternal
+      ? [
+          'Kategorie',
+          'Položka',
+          'Jednotka',
+          'Počet',
+          'Cena za jednotku',
+          'Cena pro klienta',
+          'Interní náklad',
+          'Marže (Kč)',
+          'Marže (%)',
+          'Poznámka'
+        ]
+      : [
+          'Kategorie',
+          'Položka',
+          'Jednotka',
+          'Počet',
+          'Cena za jednotku',
+          'Cena celkem',
+          'Poznámka'
+        ];
+
+    const headerRowIndex = worksheetData.length;
+    worksheetData.push(padRow(headers));
+
+    const dataStartRowIndex = worksheetData.length;
 
     items.forEach((item) => {
       const category = categories.find((c) => c.id === item.category_id);
-      const row = [
-        category?.name || '',
+      const totalPrice = item.total_price || 0;
+      const internalTotal = item.internal_total_price || 0;
+      const profitValue = item.profit ?? totalPrice - internalTotal;
+      const marginValue = totalPrice > 0 ? (profitValue / totalPrice) * 100 : 0;
+      const quantity = item.quantity ?? 0;
+      const quantityDisplay = Number.isInteger(quantity) ? quantity : Number(quantity).toFixed(2);
+
+      const rowBase = [
+        category?.name || 'Bez kategorie',
         item.item_name || '',
         item.unit || '',
-        item.quantity || 0,
-        `${(item.price_per_unit || 0).toFixed(2)} Kč`,
-        `${(item.total_price || 0).toFixed(2)} Kč`,
-        '',
-        item.notes || ''
+        quantityDisplay,
+        formatCurrency(item.price_per_unit || 0),
+        formatCurrency(totalPrice)
       ];
 
-      worksheetData.push(row);
+      if (includeInternal) {
+        rowBase.push(
+          formatCurrency(internalTotal),
+          formatCurrency(profitValue),
+          `${marginValue.toFixed(1)} %`,
+          item.notes || ''
+        );
+      } else {
+        rowBase.push(item.notes || '');
+      }
+
+      worksheetData.push(padRow(rowBase));
     });
 
-    worksheetData.push([]);
-    worksheetData.push(['Celkem k fakturaci bez DPH', '', '', '', '', `${totals.clientTotal.toFixed(2)} Kč`]);
-    worksheetData.push(['Celkem k fakturaci s DPH', '0,00%', '', '', '', `${totals.clientTotal.toFixed(2)} Kč`]);
+    const dataEndRowIndex = worksheetData.length - 1;
+
+    const totalsRowIndex = worksheetData.length;
+    worksheetData.push(
+      padRow(
+        includeInternal
+          ? [
+              'Souhrn',
+              '',
+              '',
+              '',
+              '',
+              formatCurrency(totals.clientTotal),
+              formatCurrency(totals.internalTotal),
+              formatCurrency(totals.profit),
+              `${marginPercentage.toFixed(1)} %`,
+              ''
+            ]
+          : [
+              'Souhrn',
+              '',
+              '',
+              '',
+              '',
+              formatCurrency(totals.clientTotal),
+              ''
+            ]
+      )
+    );
+
+    worksheetData.push(padRow([]));
+
+    const noteRowIndex = worksheetData.length;
+    worksheetData.push(
+      padRow([
+        'Poznámka',
+        includeInternal
+          ? 'Interní data obsahují nákladovost a marže – sdílejte pouze v rámci týmu.'
+          : 'Ceny jsou uvedeny bez DPH. Nabídka je platná 14 dní od data exportu.'
+      ])
+    );
 
     const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Rozpočet');
 
-    worksheet['!cols'] = [
-      { wch: 18 },
-      { wch: 35 },
-      { wch: 10 },
-      { wch: 8 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 3 },
-      { wch: 40 }
+    const columnWidths = includeInternal
+      ? [18, 34, 12, 10, 18, 18, 18, 18, 14, 36]
+      : [20, 36, 12, 10, 18, 18, 40];
+    worksheet['!cols'] = columnWidths.map((wch) => ({ wch }));
+
+    const merges = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: columnCount - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: columnCount - 1 } },
+      { s: { r: totalsHeadingRowIndex, c: 0 }, e: { r: totalsHeadingRowIndex, c: columnCount - 1 } },
+      { s: { r: noteRowIndex, c: 1 }, e: { r: noteRowIndex, c: columnCount - 1 } }
     ];
+
+    worksheet['!merges'] = merges;
+
+    if (items.length > 0) {
+      worksheet['!autofilter'] = {
+        ref: `A${headerRowIndex + 1}:${XLSX.utils.encode_col(columnCount - 1)}${
+          headerRowIndex + items.length
+        }`
+      };
+    }
 
     const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
     for (let R = 0; R <= range.e.r; R++) {
       for (let C = 0; C <= range.e.c; C++) {
         const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
-        if (!worksheet[cellRef]) continue;
+        const cell = worksheet[cellRef];
+        if (!cell) continue;
 
-        if (!worksheet[cellRef].s) worksheet[cellRef].s = {};
+        if (!cell.s) cell.s = {};
 
-        if (R <= 2) {
-          worksheet[cellRef].s = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'E8F4F8' } },
+        if (R === 0) {
+          cell.s = {
+            font: { bold: true, sz: 18, color: { rgb: '1F4E78' } },
+            alignment: { horizontal: 'left', vertical: 'center' }
+          };
+          continue;
+        }
+
+        if (R === 1) {
+          cell.s = {
+            font: { italic: true, color: { rgb: '2F5597' } },
+            alignment: { horizontal: 'left', vertical: 'center' }
+          };
+          continue;
+        }
+
+        if (R >= summaryStartRowIndex && R <= summaryEndRowIndex) {
+          const isLabelColumn = C === 0 || C === 3;
+          cell.s = {
+            font: { bold: isLabelColumn },
+            fill: { fgColor: { rgb: 'F5F7FA' } },
             border: {
-              top: { style: 'thin' },
-              bottom: { style: 'thin' },
-              left: { style: 'thin' },
-              right: { style: 'thin' }
+              top: { style: 'thin', color: { rgb: 'D9E2EC' } },
+              bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
+              left: { style: 'thin', color: { rgb: 'D9E2EC' } },
+              right: { style: 'thin', color: { rgb: 'D9E2EC' } }
             }
           };
+          continue;
         }
 
-        if (R === 5) {
-          worksheet[cellRef].s = {
-            font: { color: { rgb: 'FFFFFF' }, bold: true, sz: 14 },
+        if (R === totalsHeadingRowIndex) {
+          cell.s = {
+            font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
             fill: { fgColor: { rgb: '1F4E78' } },
-            alignment: { horizontal: 'center' }
+            alignment: { horizontal: 'left', vertical: 'center' }
           };
+          continue;
         }
 
-        if (R === 6) {
-          worksheet[cellRef].s = {
-            font: { color: { rgb: 'FFFFFF' }, bold: true },
-            fill: { fgColor: { rgb: '1F4E78' } },
+        if (R >= financialSummaryStartRowIndex && R <= financialSummaryEndRowIndex) {
+          const isLabelColumn = C === 0 || C === 3;
+          cell.s = {
+            font: { bold: isLabelColumn },
+            fill: { fgColor: { rgb: 'F7FBFF' } },
             border: {
-              top: { style: 'thin' },
-              bottom: { style: 'thin' },
-              left: { style: 'thin' },
-              right: { style: 'thin' }
+              top: { style: 'thin', color: { rgb: 'D9E2EC' } },
+              bottom: { style: 'thin', color: { rgb: 'D9E2EC' } },
+              left: { style: 'thin', color: { rgb: 'D9E2EC' } },
+              right: { style: 'thin', color: { rgb: 'D9E2EC' } }
+            }
+          };
+          continue;
+        }
+
+        if (R === headerRowIndex) {
+          cell.s = {
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: '1F4E78' } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: '1F4E78' } },
+              bottom: { style: 'thin', color: { rgb: '1F4E78' } },
+              left: { style: 'thin', color: { rgb: '1F4E78' } },
+              right: { style: 'thin', color: { rgb: '1F4E78' } }
+            }
+          };
+          continue;
+        }
+
+        if (R >= dataStartRowIndex && R <= dataEndRowIndex) {
+          const isEvenRow = (R - dataStartRowIndex) % 2 === 0;
+          cell.s = {
+            fill: isEvenRow ? { fgColor: { rgb: 'FDFEFE' } } : { fgColor: { rgb: 'F4F8FB' } },
+            border: {
+              top: { style: 'hair', color: { rgb: 'D0D7DE' } },
+              bottom: { style: 'hair', color: { rgb: 'D0D7DE' } },
+              left: { style: 'hair', color: { rgb: 'D0D7DE' } },
+              right: { style: 'hair', color: { rgb: 'D0D7DE' } }
+            },
+            alignment: { vertical: 'center', horizontal: C >= 4 ? 'right' : 'left' }
+          };
+          continue;
+        }
+
+        if (R === totalsRowIndex) {
+          const isLabelColumn = C === 0;
+          cell.s = {
+            font: { bold: !isLabelColumn },
+            fill: { fgColor: { rgb: 'E8F4F8' } },
+            border: {
+              top: { style: 'medium', color: { rgb: '1F4E78' } },
+              bottom: { style: 'medium', color: { rgb: '1F4E78' } },
+              left: { style: 'thin', color: { rgb: '1F4E78' } },
+              right: { style: 'thin', color: { rgb: '1F4E78' } }
+            },
+            alignment: { horizontal: isLabelColumn ? 'left' : 'right', vertical: 'center' }
+          };
+          continue;
+        }
+
+        if (R === noteRowIndex) {
+          const isLabelColumn = C === 0;
+          cell.s = {
+            font: { bold: isLabelColumn },
+            fill: { fgColor: { rgb: 'FFF4E5' } },
+            alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+            border: {
+              top: { style: 'thin', color: { rgb: 'F7C566' } },
+              bottom: { style: 'thin', color: { rgb: 'F7C566' } },
+              left: { style: 'thin', color: { rgb: 'F7C566' } },
+              right: { style: 'thin', color: { rgb: 'F7C566' } }
             }
           };
         }
