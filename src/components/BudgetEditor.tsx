@@ -1233,6 +1233,13 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
               margin-top: 12px;
               font-size: 13px;
             }
+            thead {
+              display: table-header-group;
+            }
+            tbody tr {
+              page-break-inside: avoid;
+            }
+
             thead th {
               text-align: left;
               padding: 14px 16px;
