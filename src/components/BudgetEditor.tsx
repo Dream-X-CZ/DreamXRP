@@ -14,6 +14,7 @@ import {
   BarChart3,
   Target,
   FileSpreadsheet,
+  FileText,
   Info,
   Loader2,
   X,
@@ -719,6 +720,320 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     }
 
     XLSX.writeFile(workbook, fileName);
+  };
+
+  const exportToPdf = () => {
+    const clientName = budget.client_name?.trim() || '—';
+    const statusLabel =
+      statusOptions.find((option) => option.value === budget.status)?.label || '—';
+    const formattedDate = new Date().toLocaleDateString('cs-CZ');
+
+    const getCurrency = (value: number) => `${value.toLocaleString('cs-CZ')} Kč`;
+
+    const tableRows = (items.length > 0
+      ? items.map((item) => {
+        const category = categories.find((cat) => cat.id === item.category_id);
+        const { text: noteText } = decodeItemNotes(item.notes);
+
+        return `
+          <tr>
+            <td>${category?.name || '—'}</td>
+            <td>${item.item_name || '—'}</td>
+            <td>${item.unit || '—'}</td>
+            <td class="text-right">${(item.quantity || 0).toLocaleString('cs-CZ')}</td>
+            <td class="text-right">${getCurrency(item.price_per_unit || 0)}</td>
+            <td class="text-right">${getCurrency(item.total_price || 0)}</td>
+            <td>${noteText || '—'}</td>
+          </tr>
+        `;
+      })
+      : [
+          `
+        <tr class="empty">
+          <td colspan="7" style="text-align:center; padding: 32px 16px; color: #64748b; font-style: italic;">
+            Zatím nebyly přidány žádné položky rozpočtu.
+          </td>
+        </tr>
+      `]
+    ).join('');
+
+    const topCategories =
+      categoryBreakdown.length > 0
+        ? categoryBreakdown.map((category) => category.name).join(', ')
+        : '—';
+
+    const pdfWindow = window.open('', '_blank');
+    if (!pdfWindow) {
+      console.error('Nepodařilo se otevřít okno pro export PDF.');
+      return;
+    }
+
+    pdfWindow.document.write(`
+      <!DOCTYPE html>
+      <html lang="cs">
+        <head>
+          <meta charset="utf-8" />
+          <title>Rozpočet pro klienta</title>
+          <style>
+            :root {
+              color-scheme: light;
+            }
+            * {
+              box-sizing: border-box;
+            }
+            body {
+              margin: 0;
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              background: #f8fafc;
+              color: #0a192f;
+              -webkit-print-color-adjust: exact;
+            }
+            @page {
+              size: A4;
+              margin: 24mm;
+            }
+            .page {
+              padding: 48px 56px 64px;
+              page-break-after: always;
+            }
+            .page:last-of-type {
+              page-break-after: auto;
+            }
+            header {
+              background: #0a192f;
+              border-radius: 24px;
+              padding: 32px 40px;
+              color: white;
+              position: relative;
+              overflow: hidden;
+            }
+            header::after {
+              content: '';
+              position: absolute;
+              inset: 16px;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 20px;
+            }
+            header h1 {
+              margin: 0 0 8px;
+              font-size: 28px;
+            }
+            header p {
+              margin: 0;
+              font-size: 15px;
+              color: rgba(255, 255, 255, 0.8);
+            }
+            .badge {
+              position: absolute;
+              top: 32px;
+              right: 40px;
+              background: white;
+              color: #0a192f;
+              padding: 8px 16px;
+              border-radius: 999px;
+              font-size: 13px;
+              font-weight: 600;
+            }
+            .section {
+              margin-top: 32px;
+              background: white;
+              border-radius: 20px;
+              padding: 28px 32px;
+              box-shadow: 0 24px 40px -24px rgba(15, 23, 42, 0.18);
+            }
+            .section-title {
+              margin: 0 0 20px;
+              font-size: 18px;
+              color: #0a192f;
+            }
+            .details-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 16px 32px;
+            }
+            .detail-label {
+              font-size: 12px;
+              font-weight: 600;
+              letter-spacing: 0.08em;
+              text-transform: uppercase;
+              color: #64748b;
+              margin-bottom: 4px;
+            }
+            .detail-value {
+              font-size: 15px;
+              color: #0f172a;
+              font-weight: 500;
+            }
+            .summary-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 16px;
+              margin-top: 16px;
+            }
+            .summary-card {
+              background: #e8f4f8;
+              border-radius: 18px;
+              padding: 20px 24px;
+            }
+            .summary-card .label {
+              font-size: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.08em;
+              color: #486581;
+              margin-bottom: 8px;
+            }
+            .summary-card .value {
+              font-size: 22px;
+              font-weight: 700;
+              color: #0a192f;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 12px;
+              font-size: 13px;
+            }
+            thead th {
+              text-align: left;
+              padding: 14px 16px;
+              background: #0a192f;
+              color: white;
+              font-weight: 600;
+              border: none;
+            }
+            tbody td {
+              padding: 14px 16px;
+              border-bottom: 1px solid #e2e8f0;
+              color: #0f172a;
+            }
+            tbody tr:nth-child(even) td {
+              background: #f8fafc;
+            }
+            tbody tr:last-child td {
+              border-bottom: none;
+            }
+            .text-right {
+              text-align: right;
+            }
+            .summary-footer {
+              margin-top: 24px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              font-size: 13px;
+              color: #475569;
+            }
+            @media print {
+              body {
+                background: white;
+              }
+              .page {
+                padding: 24px 32px 40px;
+              }
+              header {
+                border-radius: 16px;
+              }
+              .section {
+                box-shadow: none;
+                border: 1px solid rgba(148, 163, 184, 0.2);
+              }
+              .summary-card {
+                background: #e8f4f8 !important;
+                -webkit-print-color-adjust: exact;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <header>
+              <div class="badge">${formattedDate}</div>
+              <h1>${budget.name?.trim() || 'Rozpočet pro klienta'}</h1>
+              <p>Připraveno pro ${clientName}</p>
+            </header>
+
+            <section class="section">
+              <h2 class="section-title">Přehled projektu</h2>
+              <div class="details-grid">
+                <div>
+                  <div class="detail-label">Klient</div>
+                  <div class="detail-value">${clientName}</div>
+                </div>
+                <div>
+                  <div class="detail-label">Datum exportu</div>
+                  <div class="detail-value">${formattedDate}</div>
+                </div>
+                <div>
+                  <div class="detail-label">E-mail</div>
+                  <div class="detail-value">${budget.client_email?.trim() || '—'}</div>
+                </div>
+                <div>
+                  <div class="detail-label">Projektový manažer</div>
+                  <div class="detail-value">${budget.project_manager?.trim() || '—'}</div>
+                </div>
+                <div>
+                  <div class="detail-label">Kontakt</div>
+                  <div class="detail-value">${budget.manager_email?.trim() || '—'}</div>
+                </div>
+                <div>
+                  <div class="detail-label">Stav rozpočtu</div>
+                  <div class="detail-value">${statusLabel}</div>
+                </div>
+              </div>
+
+              <div class="summary-grid">
+                <div class="summary-card">
+                  <div class="label">Celkem k fakturaci bez DPH</div>
+                  <div class="value">${getCurrency(totals.clientTotal)}</div>
+                </div>
+                <div class="summary-card">
+                  <div class="label">DPH 21 %</div>
+                  <div class="value">${getCurrency(projectedVatTotal)}</div>
+                </div>
+                <div class="summary-card">
+                  <div class="label">Průměrná položka</div>
+                  <div class="value">${getCurrency(averageItemValue)}</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <h2 class="section-title">Položky rozpočtu</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Kategorie</th>
+                    <th>Položka</th>
+                    <th>Jednotka</th>
+                    <th class="text-right">Počet</th>
+                    <th class="text-right">Cena / jednotka</th>
+                    <th class="text-right">Celkem bez DPH</th>
+                    <th>Poznámka</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tableRows}
+                </tbody>
+              </table>
+
+              <div class="summary-footer">
+                <div><strong>Součet bez DPH:</strong> ${getCurrency(totals.clientTotal)}</div>
+                <div><strong>Součet s DPH (21 %):</strong> ${getCurrency(projectedVatTotal)}</div>
+                <div><strong>Top kategorie:</strong> ${topCategories}</div>
+              </div>
+            </section>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    pdfWindow.document.close();
+    pdfWindow.focus();
   };
 
   const totals = useMemo(
@@ -1674,6 +1989,19 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
                     {currentStep === steps.length - 1 && (
                       <>
+                        <button
+                          type="button"
+                          onClick={exportToPdf}
+                          disabled={!budgetId}
+                          className={`inline-flex items-center gap-2 rounded-xl border border-[#0a192f]/20 px-4 py-2 text-sm font-medium transition ${
+                            budgetId
+                              ? 'bg-white text-[#0a192f] hover:border-[#0a192f] hover:bg-white shadow-sm'
+                              : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          <FileText className="h-4 w-4" />
+                          PDF pro klienta
+                        </button>
                         <button
                           type="button"
                           onClick={() => exportToExcel(false)}
