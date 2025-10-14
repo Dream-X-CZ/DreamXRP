@@ -1127,8 +1127,17 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
               color: #0a192f;
               -webkit-print-color-adjust: exact;
             }
+            @page {
+              size: A4;
+              margin: 24mm;
+            }
             .page {
               padding: 48px 56px 64px;
+              page-break-after: always;
+            }
+            .page:last-of-type {
+              page-break-after: auto;
+
             }
             header {
               background: #0a192f;
@@ -1350,7 +1359,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
               <div class="summary-footer">
                 <div><strong>Součet bez DPH:</strong> ${getCurrency(totals.clientTotal)}</div>
                 <div><strong>Součet s DPH (21 %):</strong> ${getCurrency(projectedVatTotal)}</div>
-                <div><strong>Marže:</strong> ${marginPercentage.toFixed(1)} %</div>
+
                 <div><strong>Top kategorie:</strong> ${topCategories}</div>
               </div>
             </section>
