@@ -1,5 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Plus, Calendar, DollarSign, Trash2, CreditCard as Edit2, Repeat, CheckCircle, XCircle, Briefcase } from 'lucide-react';
+import {
+  Plus,
+  Calendar,
+  DollarSign,
+  Trash2,
+  CreditCard as Edit2,
+  Repeat,
+  CheckCircle,
+  XCircle,
+  Briefcase,
+  Globe,
+  Mail,
+  AlertTriangle,
+  Clock
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Expense, Category, Project } from '../types/database';
 import { ensureUserOrganization } from '../lib/organization';
@@ -32,6 +46,28 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
   const [formData, setFormData] = useState(createInitialFormState);
 
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+
+  const startOfDay = (date: Date) => {
+    const normalized = new Date(date);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '—';
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '—';
+
+    return parsed.toLocaleDateString('cs-CZ');
+  };
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('cs-CZ', {
+      style: 'currency',
+      currency: 'CZK',
+      maximumFractionDigits: 0
+    }).format(value);
 
   useEffect(() => {
     const fetchOrganization = async () => {
@@ -301,6 +337,67 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
     }
   };
 
+  const domainCategoryIds = new Set(
+    categories
+      .filter((category) => {
+        const normalized = category.name.trim().toLowerCase();
+        return normalized.includes('domén') || (normalized.includes('hosting') && normalized.includes('email'));
+      })
+      .map((category) => category.id)
+  );
+
+  const today = startOfDay(new Date());
+  const msInDay = 1000 * 60 * 60 * 24;
+
+  const domainExpenses = expenses
+    .filter((expense) => domainCategoryIds.has(expense.category_id))
+    .map((expense) => {
+      const categoryName = getCategoryName(expense.category_id);
+      const purchaseDate = expense.date ? `${expense.date}T00:00:00` : null;
+      const purchaseDateObj = purchaseDate ? new Date(purchaseDate) : null;
+      const hasValidPurchaseDate = purchaseDateObj && !Number.isNaN(purchaseDateObj.getTime());
+
+      let renewalDate: Date | null = null;
+      if (hasValidPurchaseDate && purchaseDateObj) {
+        renewalDate = new Date(purchaseDateObj);
+        renewalDate.setFullYear(renewalDate.getFullYear() + 1);
+      }
+
+      let daysToRenewal: number | null = null;
+      if (renewalDate) {
+        const renewalStart = startOfDay(renewalDate);
+        daysToRenewal = Math.ceil((renewalStart.getTime() - today.getTime()) / msInDay);
+      }
+
+      let status: 'ok' | 'upcoming' | 'expired' | 'unknown' = 'unknown';
+      if (!renewalDate) {
+        status = 'unknown';
+      } else if (daysToRenewal !== null && daysToRenewal <= 0) {
+        status = 'expired';
+      } else if (daysToRenewal !== null && daysToRenewal <= 30) {
+        status = 'upcoming';
+      } else {
+        status = 'ok';
+      }
+
+      return {
+        expense,
+        categoryName,
+        purchaseDate: purchaseDateObj?.toISOString() ?? null,
+        renewalDate: renewalDate?.toISOString() ?? null,
+        daysToRenewal,
+        status
+      };
+    })
+    .sort((a, b) => {
+      const aTime = a.renewalDate ? new Date(a.renewalDate).getTime() : Number.POSITIVE_INFINITY;
+      const bTime = b.renewalDate ? new Date(b.renewalDate).getTime() : Number.POSITIVE_INFINITY;
+      return aTime - bTime;
+    });
+
+  const expiredDomains = domainExpenses.filter((item) => item.status === 'expired');
+  const upcomingDomains = domainExpenses.filter((item) => item.status === 'upcoming');
+
   const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
   return (
@@ -327,6 +424,137 @@ export default function ExpensesList({ activeOrganizationId }: ExpensesListProps
           <Plus className="w-5 h-5" />
           <span>Nový náklad</span>
         </button>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-[#0a192f]">Domény a emailové hostingy</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Sledované položky: <span className="font-medium">{domainExpenses.length}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-3 text-[#0a192f]">
+            <div className="flex items-center gap-2 bg-[#0a192f]/5 px-3 py-2 rounded-lg">
+              <Globe className="w-4 h-4" />
+              <span className="text-sm font-medium">Domény</span>
+            </div>
+            <div className="flex items-center gap-2 bg-[#0a192f]/5 px-3 py-2 rounded-lg">
+              <Mail className="w-4 h-4" />
+              <span className="text-sm font-medium">Email hostingy</span>
+            </div>
+          </div>
+        </div>
+
+        {domainExpenses.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-600">
+            Zatím není evidována žádná doména ani emailový hosting. Přidejte je jako náklad s kategorií{' '}
+            <span className="font-medium">„Doména“</span>{' '}nebo{' '}
+            <span className="font-medium">„Emailový hosting“</span>, abychom mohli hlídat termín obnovy.
+          </div>
+        ) : (
+          <>
+            {expiredDomains.length > 0 && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4" />
+                  <div>
+                    <p className="font-semibold">{expiredDomains.length} položek je po termínu obnovy.</p>
+                    <p className="mt-1 text-red-600/80">
+                      Obnovte je co nejdříve, aby nedošlo ke ztrátě domény nebo přerušení emailových služeb.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {upcomingDomains.length > 0 && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                <div className="flex items-start gap-2">
+                  <Clock className="mt-0.5 h-4 w-4" />
+                  <div>
+                    <p className="font-semibold">
+                      {upcomingDomains.length} {upcomingDomains.length === 1 ? 'položka vyžaduje' : 'položky vyžadují'} obnovu během 30
+                      dní.
+                    </p>
+                    <p className="mt-1 text-amber-600/80">
+                      Naplánujte platbu včas, aby nedošlo k výpadku služeb.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Služba</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Částka</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Datum nákupu</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Další obnovení</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Stav</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Poznámka</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {domainExpenses.map((item) => {
+                    const renewalLabel = item.renewalDate ? formatDate(item.renewalDate) : '—';
+                    const purchaseLabel = item.purchaseDate ? formatDate(item.purchaseDate) : '—';
+
+                    const statusLabel = (() => {
+                      switch (item.status) {
+                        case 'expired':
+                          return 'Po termínu';
+                        case 'upcoming':
+                          return `Obnovit do ${item.daysToRenewal} dní`;
+                        case 'ok':
+                          return 'V pořádku';
+                        default:
+                          return 'Bez data';
+                      }
+                    })();
+
+                    const statusClasses = (() => {
+                      switch (item.status) {
+                        case 'expired':
+                          return 'bg-red-100 text-red-700';
+                        case 'upcoming':
+                          return 'bg-amber-100 text-amber-700';
+                        case 'ok':
+                          return 'bg-emerald-100 text-emerald-700';
+                        default:
+                          return 'bg-gray-100 text-gray-600';
+                      }
+                    })();
+
+                    return (
+                      <tr key={item.expense.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-[#0a192f]">{item.expense.name}</div>
+                          <div className="text-xs text-gray-500">{item.categoryName}</div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="font-semibold text-[#0a192f]">{formatCurrency(item.expense.amount)}</span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">{purchaseLabel}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{renewalLabel}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusClasses}`}>
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">
+                          {item.expense.notes ? item.expense.notes : <span className="text-gray-400">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {showForm && (
