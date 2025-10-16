@@ -27,6 +27,7 @@ export interface BudgetItem {
   id: string;
   budget_id: string;
   category_id: string;
+  section_id?: string | null;
   item_name: string;
   unit: string;
   quantity: number;
@@ -40,6 +41,15 @@ export interface BudgetItem {
   order_index: number;
   created_at: string;
   is_cost?: boolean;
+}
+
+export interface BudgetSection {
+  id: string;
+  budget_id: string;
+  name: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Expense {

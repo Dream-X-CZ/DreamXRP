@@ -22,7 +22,7 @@ import {
 
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Budget, BudgetItem, Category } from '../types/database';
+import { Budget, BudgetItem, BudgetSection, Category } from '../types/database';
 import * as XLSX from 'xlsx';
 import { ensureUserOrganization } from '../lib/organization';
 import { isValidUuid } from '../lib/uuid';
@@ -34,6 +34,12 @@ interface BudgetEditorProps {
   activeOrganizationId: string | null;
 }
 
+type EditableBudgetSection = Partial<BudgetSection> & {
+  tempId: string;
+  isNew?: boolean;
+  isDeleted?: boolean;
+};
+
 export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganizationId }: BudgetEditorProps) {
   const [budget, setBudget] = useState<Partial<Budget>>({
     name: '',
@@ -44,6 +50,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   });
   const [items, setItems] = useState<Partial<BudgetItem>[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [sections, setSections] = useState<EditableBudgetSection[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -57,6 +64,10 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   const [categoryManagerError, setCategoryManagerError] = useState<string | null>(null);
   const [categorySavingId, setCategorySavingId] = useState<string | 'new' | null>(null);
   const categoriesLoadedRef = useRef(false);
+  const activeSections = useMemo(
+    () => sections.filter((section) => !section.isDeleted),
+    [sections]
+  );
 
   const statusOptions: { value: Budget['status']; label: string; hint: string }[] = [
     { value: 'draft', label: 'Koncept', hint: 'Pracovní verze pro interní ladění' },
@@ -66,6 +77,13 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   ];
 
   const NOTES_METADATA_PREFIX = '__budget_meta__:';
+
+  const generateSectionId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `temp-${Math.random().toString(36).slice(2, 10)}`;
+  };
 
   const decodeItemNotes = (rawNotes?: string | null) => {
     if (!rawNotes) {
@@ -110,7 +128,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     internal_total_price: 0,
     profit: 0,
     order_index: orderIndex,
-    is_cost: false
+    is_cost: false,
+    section_id: undefined
   });
 
   useEffect(() => {
@@ -143,6 +162,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     } else {
       setBudget({ name: '', client_name: '', status: 'draft', archived: false, archived_at: null });
       setItems([createEmptyItem(0)]);
+      setSections([]);
     }
     setCurrentStep(0);
     setStepErrors([]);
@@ -176,39 +196,73 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     });
   }, [categories]);
 
+  useEffect(() => {
+    setItems((prevItems) => {
+      const validIds = new Set(
+        activeSections
+          .map((section) => section.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      );
+
+      let hasChanged = false;
+      const sanitized = prevItems.map((item) => {
+        if (item.section_id && !validIds.has(item.section_id)) {
+          hasChanged = true;
+          return { ...item, section_id: undefined };
+        }
+        return item;
+      });
+
+      if (!hasChanged) {
+        return prevItems;
+      }
+
+      return sanitized;
+    });
+  }, [activeSections]);
+
   const loadBudget = async (id: string) => {
     setLoading(true);
 
     try {
-      const { data: budgetData } = await supabase
-        .from('budgets')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const [budgetResponse, itemsResponse, sectionsResponse] = await Promise.all([
+        supabase.from('budgets').select('*').eq('id', id).single(),
+        supabase.from('budget_items').select('*').eq('budget_id', id).order('order_index'),
+        supabase.from('budget_sections').select('*').eq('budget_id', id).order('created_at')
+      ]);
 
-      const { data: itemsData } = await supabase
-        .from('budget_items')
-        .select('*')
-        .eq('budget_id', id)
-        .order('order_index');
-
-      if (budgetData) {
+      if (budgetResponse.data) {
         setBudget({
-          ...budgetData,
-          archived: budgetData.archived ?? false,
-          archived_at: budgetData.archived_at ?? null
+          ...budgetResponse.data,
+          archived: budgetResponse.data.archived ?? false,
+          archived_at: budgetResponse.data.archived_at ?? null
         });
       }
-      if (itemsData && itemsData.length > 0) {
+
+      if (sectionsResponse.data) {
+        setSections(
+          sectionsResponse.data.map((section) => ({
+            ...section,
+            tempId: section.id,
+            isNew: false,
+            isDeleted: false
+          }))
+        );
+      } else {
+        setSections([]);
+      }
+
+      if (itemsResponse.data && itemsResponse.data.length > 0) {
         setItems(
-          itemsData.map((item, index) => {
+          itemsResponse.data.map((item, index) => {
             const { text: decodedNote, isCost } = decodeItemNotes(item.notes);
 
             return {
               ...item,
               notes: decodedNote,
               order_index: index,
-              is_cost: item.is_cost ?? isCost
+              is_cost: item.is_cost ?? isCost,
+              section_id: item.section_id || undefined
             };
           })
         );
@@ -224,6 +278,82 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
   const addNewItem = () => {
     setItems((prev) => [...prev, createEmptyItem(prev.length)]);
+  };
+
+  const addSection = () => {
+    const newId = generateSectionId();
+    const timestamp = new Date().toISOString();
+
+    setSections((prev) => {
+      const existingCount = prev.filter((section) => !section.isDeleted).length;
+      return [
+        ...prev,
+        {
+          id: newId,
+          tempId: newId,
+          name: `Pod-rozpočet ${existingCount + 1}`,
+          description: '',
+          created_at: timestamp,
+          updated_at: timestamp,
+          isNew: true,
+          isDeleted: false
+        }
+      ];
+    });
+  };
+
+  const updateSectionField = (
+    sectionId: string,
+    field: 'name' | 'description',
+    value: string
+  ) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              [field]: value,
+              updated_at: new Date().toISOString()
+            }
+          : section
+      )
+    );
+  };
+
+  const removeSection = (sectionId: string) => {
+    if (!sectionId) return;
+
+    const confirmationMessage =
+      'Opravdu chcete odstranit pod-rozpočet? Položky v něm zůstanou v rozpočtu.';
+    const shouldRemove =
+      typeof window === 'undefined' ? true : window.confirm(confirmationMessage);
+
+    if (!shouldRemove) {
+      return;
+    }
+
+    setSections((prev) => {
+      let removedNewSection = false;
+      const updated = prev.map((section) => {
+        if (section.id !== sectionId) return section;
+        if (section.isNew) {
+          removedNewSection = true;
+        }
+        return { ...section, isDeleted: true };
+      });
+
+      if (removedNewSection) {
+        return updated.filter((section) => !(section.id === sectionId && section.isNew));
+      }
+
+      return updated;
+    });
+
+    setItems((prevItems) =>
+      prevItems.map((item) =>
+        item.section_id === sectionId ? { ...item, section_id: undefined } : item
+      )
+    );
   };
 
   const handleArchiveToggle = async () => {
@@ -269,7 +399,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     | 'price_per_unit'
     | 'internal_quantity'
     | 'internal_price_per_unit'
-    | 'is_cost';
+    | 'is_cost'
+    | 'section_id';
 
   const updateItem = (index: number, field: EditableField, value: string | number | boolean) => {
     setItems((prev) => {
@@ -285,6 +416,9 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
           break;
         case 'notes':
           item.notes = typeof value === 'string' ? value : '';
+          break;
+        case 'section_id':
+          item.section_id = typeof value === 'string' && value ? value : undefined;
           break;
         case 'unit':
           item.unit = typeof value === 'string' ? value : '';
@@ -395,10 +529,65 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       }
 
       if (currentBudgetId) {
+        const nowIso = new Date().toISOString();
+
+        const sectionsToPersist = sections
+          .filter((section) => !section.isDeleted)
+          .map((section) => ({
+            id: section.id || generateSectionId(),
+            budget_id: currentBudgetId,
+            name: section.name?.trim() || 'Bez názvu',
+            description: section.description?.trim() || null,
+            created_at: section.created_at || nowIso,
+            updated_at: nowIso
+          }));
+
+        const sectionsToDelete = sections.filter(
+          (section) => section.isDeleted && section.id && !section.isNew
+        );
+
+        if (sectionsToDelete.length > 0) {
+          const { error: deleteSectionsError } = await supabase
+            .from('budget_sections')
+            .delete()
+            .in(
+              'id',
+              sectionsToDelete
+                .map((section) => section.id)
+                .filter((id): id is string => typeof id === 'string')
+            );
+
+          if (deleteSectionsError) {
+            throw deleteSectionsError;
+          }
+        }
+
+        if (sectionsToPersist.length > 0) {
+          const { error: upsertSectionsError } = await supabase
+            .from('budget_sections')
+            .upsert(sectionsToPersist, { onConflict: 'id' });
+
+          if (upsertSectionsError) {
+            throw upsertSectionsError;
+          }
+        } else if (sectionsToDelete.length === 0) {
+          await supabase.from('budget_sections').delete().eq('budget_id', currentBudgetId);
+        }
+
         await supabase.from('budget_items').delete().eq('budget_id', currentBudgetId);
 
+        const validSectionIds = new Set(sectionsToPersist.map((section) => section.id));
+
         const itemsToInsert = items.map((item, index) => {
-          const { is_cost, notes, id: _id, created_at: _createdAt, updated_at: _updatedAt, ...rest } = item;
+          const {
+            is_cost,
+            notes,
+            section_id: itemSectionId,
+            id: _id,
+            created_at: _createdAt,
+            updated_at: _updatedAt,
+            ...rest
+          } = item;
           const payload: Partial<BudgetItem> & {
             budget_id: string;
             order_index: number;
@@ -410,6 +599,11 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
             notes: encodeItemNotes(notes, is_cost)
           };
 
+          const normalizedSectionId =
+            itemSectionId && validSectionIds.has(itemSectionId) ? itemSectionId : null;
+
+          payload.section_id = normalizedSectionId;
+
           return payload;
         });
 
@@ -418,7 +612,6 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         if (itemsError) {
           throw itemsError;
         }
-
 
         const expenseCandidates = items.filter(
           (item) => item.is_cost || (item.price_per_unit || 0) < 0
@@ -1397,6 +1590,44 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     [items]
   );
 
+  const sectionSummaries = useMemo(() => {
+    const map = new Map<
+      string,
+      { clientTotal: number; internalTotal: number; profit: number; itemsCount: number }
+    >();
+
+    items.forEach((item) => {
+      if (!item.section_id) return;
+
+      const existing = map.get(item.section_id) || {
+        clientTotal: 0,
+        internalTotal: 0,
+        profit: 0,
+        itemsCount: 0
+      };
+
+      map.set(item.section_id, {
+        clientTotal: existing.clientTotal + (item.total_price || 0),
+        internalTotal: existing.internalTotal + (item.internal_total_price || 0),
+        profit: existing.profit + (item.profit || 0),
+        itemsCount: existing.itemsCount + 1
+      });
+    });
+
+    return activeSections.map((section) => {
+      const key = section.id || section.tempId;
+      const totalsForSection = key ? map.get(key) : undefined;
+
+      return {
+        section,
+        clientTotal: totalsForSection?.clientTotal ?? 0,
+        internalTotal: totalsForSection?.internalTotal ?? 0,
+        profit: totalsForSection?.profit ?? 0,
+        itemsCount: totalsForSection?.itemsCount ?? 0
+      };
+    });
+  }, [activeSections, items]);
+
   const steps = useMemo(
     () => [
       {
@@ -1435,6 +1666,11 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       const missingCategory = items.some((item) => !item.category_id);
       if (missingCategory) {
         errors.push('Každá položka musí mít přiřazenou kategorii.');
+      }
+
+      const missingSectionName = activeSections.some((section) => !section.name?.trim());
+      if (missingSectionName) {
+        errors.push('Každý pod-rozpočet musí mít název.');
       }
 
       const missingName = items.some((item) => !item.item_name?.trim());
@@ -1844,6 +2080,105 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                       </div>
                     </div>
 
+                    <div className="space-y-4 rounded-2xl border border-dashed border-[#0a192f]/20 bg-white/80 p-5 shadow-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-base font-semibold text-[#0a192f]">
+                            <Layers className="h-4 w-4" />
+                            Pod-rozpočty
+                          </div>
+                          <p className="text-sm text-gray-500">
+                            Vytvořte menší celky a přidělujte jim položky pro lepší přehled o nákladech i marži.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addSection}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#0a192f]/10 bg-[#0a192f] px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0c2548]"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Nový pod-rozpočet
+                        </button>
+                      </div>
+
+                      {activeSections.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                          Zatím nemáte žádné pod-rozpočty. Přidejte první a následně mu přiřaďte položky v tabulce níže.
+                        </div>
+                      ) : (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {sectionSummaries.map(({ section, clientTotal, internalTotal, profit, itemsCount }) => (
+                            <div
+                              key={section.tempId}
+                              className="space-y-4 rounded-2xl border border-gray-200 bg-white/90 p-4 shadow-sm"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 space-y-3">
+                                  <input
+                                    type="text"
+                                    value={section.name || ''}
+                                    onChange={(e) => updateSectionField(section.id || section.tempId, 'name', e.target.value)}
+                                    placeholder="Název pod-rozpočtu"
+                                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-[#0a192f] focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                  />
+                                  <textarea
+                                    value={section.description || ''}
+                                    onChange={(e) => updateSectionField(section.id || section.tempId, 'description', e.target.value)}
+                                    placeholder="Co do tohoto pod-rozpočtu patří?"
+                                    rows={2}
+                                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSection(section.id || section.tempId)}
+                                  className="rounded-lg border border-red-100 p-2 text-red-500 transition hover:bg-red-50"
+                                  aria-label={`Smazat pod-rozpočet ${section.name || ''}`}
+                                  title="Smazat pod-rozpočet"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+
+                              <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Položek</p>
+                                  <p className="text-lg font-semibold text-[#0a192f]">{itemsCount}</p>
+                                </div>
+                                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                  <Wallet className="h-5 w-5 text-[#0a192f]" />
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pro klienta</p>
+                                    <p className="text-sm font-semibold text-[#0a192f]">
+                                      {clientTotal.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                  <PiggyBank className="h-5 w-5 text-emerald-600" />
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Interně</p>
+                                    <p className="text-sm font-semibold text-emerald-600">
+                                      {internalTotal.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:col-span-3 lg:col-span-1">
+                                  <Target className="h-5 w-5 text-[#0a192f]" />
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Marže</p>
+                                    <p className={`text-sm font-semibold ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                      {profit.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 shadow-sm lg:bg-white">
 
                       <div className="overflow-x-auto lg:block">
@@ -1852,6 +2187,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                             <tr>
                               <th className="px-4 py-3 text-left">#</th>
                               <th className="px-4 py-3 text-left">Kategorie</th>
+                              <th className="px-4 py-3 text-left">Pod-rozpočet</th>
                               <th className="px-4 py-3 text-left">Název položky</th>
                               <th className="px-4 py-3 text-left">Poznámka</th>
                               <th className="px-4 py-3 text-right">Počet</th>
@@ -1869,7 +2205,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           <tbody className="divide-y divide-gray-100">
                             {items.length === 0 ? (
                               <tr>
-                                <td colSpan={14} className="px-4 py-6 text-center text-sm text-gray-500">
+                                <td colSpan={15} className="px-4 py-6 text-center text-sm text-gray-500">
                                   Přidejte první položku pomocí tlačítka „Přidat položku“.
                                 </td>
                               </tr>
@@ -1898,6 +2234,20 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                         {categories.map((cat) => (
                                           <option key={cat.id} value={cat.id}>
                                             {cat.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <select
+                                        value={item.section_id || ''}
+                                        onChange={(e) => updateItem(index, 'section_id', e.target.value)}
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30 lg:min-w-[10rem]"
+                                      >
+                                        <option value="">Bez pod-rozpočtu</option>
+                                        {activeSections.map((section) => (
+                                          <option key={section.tempId} value={section.id || section.tempId}>
+                                            {section.name || 'Pod-rozpočet'}
                                           </option>
                                         ))}
                                       </select>
@@ -2020,7 +2370,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           </tbody>
                           <tfoot className="bg-[#0a192f]/5">
                             <tr>
-                              <td colSpan={7} className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
+                              <td colSpan={8} className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
                                 Celkem pro klienta
                               </td>
                               <td className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
@@ -2092,6 +2442,22 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                       {categories.map((cat) => (
                                         <option key={cat.id} value={cat.id}>
                                           {cat.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Pod-rozpočet</label>
+                                    <select
+                                      value={item.section_id || ''}
+                                      onChange={(e) => updateItem(index, 'section_id', e.target.value)}
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#0a192f] focus:outline-none focus:ring-2 focus:ring-[#0a192f]/30"
+                                    >
+                                      <option value="">Bez pod-rozpočtu</option>
+                                      {activeSections.map((section) => (
+                                        <option key={section.tempId} value={section.id || section.tempId}>
+                                          {section.name || 'Pod-rozpočet'}
                                         </option>
                                       ))}
                                     </select>
@@ -2291,6 +2657,62 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           <li>• Přiložte případné reference nebo moodboard.</li>
                         </ul>
                       </div>
+
+                      {activeSections.length > 0 && (
+                        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-[#0a192f]">Souhrn pod-rozpočtů</p>
+                              <p className="text-xs text-gray-500">Rozdělení rozpočtu podle jednotlivých celků.</p>
+                            </div>
+                            <Layers className="h-4 w-4 text-[#0a192f]" />
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            {sectionSummaries.map(({ section, clientTotal, internalTotal, profit, itemsCount }) => (
+                              <div
+                                key={section.tempId}
+                                className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4"
+                              >
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-[#0a192f]">
+                                      {section.name?.trim() || 'Pod-rozpočet'}
+                                    </p>
+                                    {section.description?.trim() && (
+                                      <p className="text-xs text-gray-500">{section.description}</p>
+                                    )}
+                                  </div>
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    {itemsCount} položek
+                                  </span>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pro klienta</p>
+                                    <p className="text-sm font-semibold text-[#0a192f]">
+                                      {clientTotal.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Interně</p>
+                                    <p className="text-sm font-semibold text-emerald-600">
+                                      {internalTotal.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Marže</p>
+                                    <p className={`text-sm font-semibold ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                      {profit.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="rounded-2xl border border-dashed border-[#0a192f]/30 bg-[#0a192f]/5 p-6 shadow-inner">
                         <div className="flex items-start gap-3">

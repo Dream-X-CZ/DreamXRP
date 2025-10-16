@@ -1,28 +1,6 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
-CREATE TABLE public.budget_items (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  budget_id uuid NOT NULL,
-  category_id uuid NOT NULL,
-  item_name text NOT NULL,
-  unit text NOT NULL,
-  quantity numeric NOT NULL DEFAULT 0,
-  price_per_unit numeric NOT NULL DEFAULT 0,
-  total_price numeric NOT NULL DEFAULT 0,
-  notes text DEFAULT ''::text,
-  internal_price_per_unit numeric NOT NULL DEFAULT 0,
-  internal_quantity numeric NOT NULL DEFAULT 0,
-  internal_total_price numeric NOT NULL DEFAULT 0,
-  profit numeric NOT NULL DEFAULT 0,
-  order_index integer DEFAULT 0,
-  created_at timestamp with time zone DEFAULT now(),
-  task_id uuid,
-  CONSTRAINT budget_items_pkey PRIMARY KEY (id),
-  CONSTRAINT budget_items_budget_id_fkey FOREIGN KEY (budget_id) REFERENCES public.budgets(id),
-  CONSTRAINT budget_items_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id),
-  CONSTRAINT budget_items_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id)
-);
 CREATE TABLE public.budgets (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   name text NOT NULL,
@@ -41,6 +19,42 @@ CREATE TABLE public.budgets (
   CONSTRAINT budgets_pkey PRIMARY KEY (id),
   CONSTRAINT budgets_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT budgets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
+);
+
+CREATE TABLE public.budget_sections (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  budget_id uuid NOT NULL,
+  name text NOT NULL,
+  description text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT budget_sections_pkey PRIMARY KEY (id),
+  CONSTRAINT budget_sections_budget_id_fkey FOREIGN KEY (budget_id) REFERENCES public.budgets(id) ON DELETE CASCADE
+);
+
+CREATE TABLE public.budget_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  budget_id uuid NOT NULL,
+  category_id uuid NOT NULL,
+  section_id uuid,
+  item_name text NOT NULL,
+  unit text NOT NULL,
+  quantity numeric NOT NULL DEFAULT 0,
+  price_per_unit numeric NOT NULL DEFAULT 0,
+  total_price numeric NOT NULL DEFAULT 0,
+  notes text DEFAULT ''::text,
+  internal_price_per_unit numeric NOT NULL DEFAULT 0,
+  internal_quantity numeric NOT NULL DEFAULT 0,
+  internal_total_price numeric NOT NULL DEFAULT 0,
+  profit numeric NOT NULL DEFAULT 0,
+  order_index integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  task_id uuid,
+  CONSTRAINT budget_items_pkey PRIMARY KEY (id),
+  CONSTRAINT budget_items_budget_id_fkey FOREIGN KEY (budget_id) REFERENCES public.budgets(id),
+  CONSTRAINT budget_items_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id),
+  CONSTRAINT budget_items_section_id_fkey FOREIGN KEY (section_id) REFERENCES public.budget_sections(id) ON DELETE SET NULL,
+  CONSTRAINT budget_items_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id)
 );
 CREATE TABLE public.calendar_events (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
