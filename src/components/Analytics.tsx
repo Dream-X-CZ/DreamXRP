@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { TrendingUp, DollarSign, FileText, PieChart } from 'lucide-react';
+import { TrendingUp, DollarSign, FileText, PieChart, Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
 import ReactApexChart from 'react-apexcharts';
@@ -13,6 +13,7 @@ interface Stats {
   totalExpenses: number;
   budgetsByStatus: { status: string; count: number }[];
   expensesByCategory: { category: string; amount: number }[];
+  internalCostsByCategory: { category: string; amount: number }[];
   monthlyData: {
     monthKey: string;
     monthLabel: string;
@@ -30,6 +31,7 @@ const INITIAL_STATS: Stats = {
   totalExpenses: 0,
   budgetsByStatus: [],
   expensesByCategory: [],
+  internalCostsByCategory: [],
   monthlyData: [],
 };
 
@@ -68,6 +70,17 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
       if (budgetsError) throw budgetsError;
 
       const budgetIds = (budgets ?? []).map(budget => budget.id);
+
+      const { data: categoryRows, error: categoriesError } = await supabase
+        .from('categories')
+        .select('id, name')
+        .eq('organization_id', organizationId);
+
+      if (categoriesError) throw categoriesError;
+
+      const categoryNameById = new Map(
+        (categoryRows ?? []).map((category) => [category.id, category.name])
+      );
 
       let budgetItems: any[] = [];
       if (budgetIds.length > 0) {
@@ -112,6 +125,26 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
         ([category, amount]) => ({ category, amount })
       );
 
+      const internalCostsByCategoryMap = new Map<string, number>();
+      budgetItems?.forEach((item) => {
+        const amount = Number(item.internal_total_price) || 0;
+        const categoryName = categoryNameById.get(item.category_id) || 'Nezařazeno';
+
+        if (!internalCostsByCategoryMap.has(categoryName)) {
+          internalCostsByCategoryMap.set(categoryName, 0);
+        }
+
+        internalCostsByCategoryMap.set(
+          categoryName,
+          (internalCostsByCategoryMap.get(categoryName) || 0) + amount
+        );
+      });
+
+      const internalCostsByCategory = Array.from(internalCostsByCategoryMap.entries())
+        .map(([category, amount]) => ({ category, amount }))
+        .filter((item) => item.amount > 0)
+        .sort((a, b) => b.amount - a.amount);
+
       const monthlyMap = new Map<
         string,
         { revenue: number; costs: number; monthLabel: string }
@@ -151,6 +184,7 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
         totalExpenses,
         budgetsByStatus,
         expensesByCategory,
+        internalCostsByCategory,
         monthlyData,
       });
     } catch (error) {
@@ -438,6 +472,49 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
     [stats.expensesByCategory]
   );
 
+  const internalCostCategoryLabels = useMemo(
+    () => stats.internalCostsByCategory.map((item) => item.category),
+    [stats.internalCostsByCategory]
+  );
+
+  const internalCostsByCategorySeries = useMemo<ApexNonAxisChartSeries>(
+    () => stats.internalCostsByCategory.map((item) => Math.round(item.amount)),
+    [stats.internalCostsByCategory]
+  );
+
+  const internalCostsByCategoryOptions = useMemo<ApexOptions>(
+    () => ({
+      chart: {
+        type: 'donut',
+        toolbar: { show: false },
+        fontFamily: 'inherit',
+      },
+      labels: internalCostCategoryLabels,
+      legend: {
+        position: 'bottom',
+      },
+      dataLabels: {
+        formatter: (value: number) => `${value.toFixed(1)} %`,
+      },
+      stroke: {
+        show: false,
+      },
+      colors: ['#2563eb', '#0a192f', '#dc2626', '#f97316', '#0f766e', '#7c3aed'],
+      tooltip: {
+        y: {
+          formatter: (value: number) =>
+            `${Math.round(value).toLocaleString('cs-CZ')} Kč`,
+        },
+      },
+    }),
+    [internalCostCategoryLabels]
+  );
+
+  const hasInternalCostData = useMemo(
+    () => stats.internalCostsByCategory.some((item) => item.amount > 0),
+    [stats.internalCostsByCategory]
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -719,24 +796,59 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
             </div>
           )}
         </div>
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-[#0a192f] mb-4 flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Náklady podle kategorie
+            </h3>
+            {hasExpensesData ? (
+              <ReactApexChart
+                options={expensesByCategoryOptions}
+                series={expensesByCategorySeries}
+                type="donut"
+                height={320}
+              />
+            ) : (
+              <div className="text-center text-gray-500 py-12">
+                Žádné náklady k zobrazení
+              </div>
+            )}
+          </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-[#0a192f] mb-4 flex items-center gap-2">
-            <DollarSign className="w-5 h-5" />
-            Náklady podle kategorie
-          </h3>
-          {hasExpensesData ? (
-            <ReactApexChart
-              options={expensesByCategoryOptions}
-              series={expensesByCategorySeries}
-              type="donut"
-              height={320}
-            />
-          ) : (
-            <div className="text-center text-gray-500 py-12">
-              Žádné náklady k zobrazení
-            </div>
-          )}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-[#0a192f] mb-4 flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Interní náklady podle kategorie
+            </h3>
+            {hasInternalCostData ? (
+              <div className="space-y-4">
+                <ReactApexChart
+                  options={internalCostsByCategoryOptions}
+                  series={internalCostsByCategorySeries}
+                  type="donut"
+                  height={220}
+                />
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                  {stats.internalCostsByCategory.map((item) => (
+                    <div
+                      key={item.category}
+                      className="flex items-center justify-between text-sm text-gray-600"
+                    >
+                      <span className="font-medium text-[#0a192f]">{item.category}</span>
+                      <span className="font-semibold text-[#0a192f]">
+                        {formatCurrency(item.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-gray-500 py-12">
+                Žádné interní náklady k zobrazení
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
