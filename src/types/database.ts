@@ -41,6 +41,7 @@ export interface BudgetItem {
   order_index: number;
   created_at: string;
   is_cost?: boolean;
+  is_personnel?: boolean;
 }
 
 export interface BudgetSection {
