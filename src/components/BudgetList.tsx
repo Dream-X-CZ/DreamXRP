@@ -10,11 +10,14 @@ import {
   CheckCircle,
   Clock,
   Archive,
-  ArchiveRestore
+  ArchiveRestore,
+  Trash2,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
-import { Budget, BudgetItem } from '../types/database';
+import { Budget } from '../types/database';
 
 interface BudgetListProps {
   onCreateNew: () => void;
@@ -35,6 +38,8 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'draft' | 'sent' | 'approved' | 'rejected' | 'archived'>('all');
   const [updatingBudgetId, setUpdatingBudgetId] = useState<string | null>(null);
+  const [budgetToDelete, setBudgetToDelete] = useState<BudgetWithStats | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     loadBudgets();
@@ -150,6 +155,36 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
       alert('Nepodařilo se aktualizovat archivaci rozpočtu. Zkuste to prosím znovu.');
     } finally {
       setUpdatingBudgetId(null);
+    }
+  };
+
+  const handleDeleteBudget = async () => {
+    if (!budgetToDelete) return;
+
+    try {
+      setDeleteLoading(true);
+
+      const { error: deleteItemsError } = await supabase
+        .from('budget_items')
+        .delete()
+        .eq('budget_id', budgetToDelete.id);
+
+      if (deleteItemsError) throw deleteItemsError;
+
+      const { error: deleteBudgetError } = await supabase
+        .from('budgets')
+        .delete()
+        .eq('id', budgetToDelete.id);
+
+      if (deleteBudgetError) throw deleteBudgetError;
+
+      setBudgets((prev) => prev.filter((budget) => budget.id !== budgetToDelete.id));
+      setBudgetToDelete(null);
+    } catch (error) {
+      console.error('Error deleting budget:', error);
+      alert('Nepodařilo se smazat rozpočet. Zkuste to prosím znovu.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -384,6 +419,16 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                     <Eye className="w-5 h-5" />
                   </button>
                   <button
+                    className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setBudgetToDelete(budget);
+                    }}
+                    title="Smazat rozpočet"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                  <button
                     className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition disabled:opacity-50"
                     onClick={(event) => {
                       event.stopPropagation();
@@ -428,6 +473,80 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {budgetToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm"
+          onClick={() => (deleteLoading ? null : setBudgetToDelete(null))}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-[#0a192f]">Smazat rozpočet</h3>
+                  <p className="text-sm text-gray-600">Tato akce je nevratná. Všechny položky a podklady spojené s tímto rozpočtem budou odstraněny.</p>
+                </div>
+              </div>
+              <button
+                className="rounded-full border border-gray-200 p-1 text-gray-500 transition hover:border-gray-300 hover:text-gray-700"
+                onClick={() => setBudgetToDelete(null)}
+                aria-label="Zavřít potvrzení smazání"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-4 rounded-xl bg-gray-50 p-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Název rozpočtu</p>
+                <p className="text-sm font-medium text-[#0a192f]">{budgetToDelete.name}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Celková částka</p>
+                  <p className="text-sm font-semibold text-[#0a192f]">
+                    {(budgetToDelete.total_amount || 0).toLocaleString('cs-CZ')} Kč
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Počet položek</p>
+                  <p className="text-sm font-semibold text-[#0a192f]">{budgetToDelete.items_count ?? 0}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                className="rounded-xl border border-gray-200 bg-white px-5 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100"
+                onClick={() => setBudgetToDelete(null)}
+                disabled={deleteLoading}
+              >
+                Zrušit
+              </button>
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleDeleteBudget}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  'Mažu…'
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Smazat rozpočet
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
