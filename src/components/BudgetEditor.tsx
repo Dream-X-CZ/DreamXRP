@@ -13,6 +13,7 @@ import {
   PiggyBank,
   Layers,
   Target,
+  Users,
   FileSpreadsheet,
   FileText,
   Info,
@@ -154,7 +155,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
   const decodeItemNotes = (rawNotes?: string | null) => {
     if (!rawNotes) {
-      return { text: '', isCost: false };
+      return { text: '', isCost: false, isPersonnel: false };
     }
 
     if (rawNotes.startsWith(NOTES_METADATA_PREFIX)) {
@@ -162,24 +163,35 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         const parsed = JSON.parse(rawNotes.slice(NOTES_METADATA_PREFIX.length));
         return {
           text: typeof parsed?.note === 'string' ? parsed.note : '',
-          isCost: Boolean(parsed?.isCost)
+          isCost: Boolean(parsed?.isCost),
+          isPersonnel: Boolean(parsed?.isPersonnel)
         };
       } catch (error) {
         console.warn('Failed to parse budget item metadata, falling back to raw notes.', error);
       }
     }
 
-    return { text: rawNotes, isCost: false };
+    return { text: rawNotes, isCost: false, isPersonnel: false };
   };
 
-  const encodeItemNotes = (noteText: string | undefined, isCost: boolean | undefined) => {
+  const encodeItemNotes = (
+    noteText: string | undefined,
+    isCost: boolean | undefined,
+    isPersonnel: boolean | undefined
+  ) => {
     const sanitizedNote = noteText || '';
+    const shouldIncludeMetadata = Boolean(isCost) || Boolean(isPersonnel);
 
-    if (!isCost) {
+    if (!shouldIncludeMetadata) {
       return sanitizedNote;
     }
 
-    const payload = { note: sanitizedNote, isCost: true };
+    const payload = {
+      note: sanitizedNote,
+      isCost: Boolean(isCost),
+      isPersonnel: Boolean(isPersonnel)
+    };
+
     return `${NOTES_METADATA_PREFIX}${JSON.stringify(payload)}`;
   };
 
@@ -196,6 +208,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     profit: 0,
     order_index: orderIndex,
     is_cost: false,
+    is_personnel: false,
     section_id: undefined
   });
 
@@ -326,13 +339,14 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
       if (itemsResponse.data && itemsResponse.data.length > 0) {
         setItems(
           itemsResponse.data.map((item, index) => {
-            const { text: decodedNote, isCost } = decodeItemNotes(item.notes);
+            const { text: decodedNote, isCost, isPersonnel } = decodeItemNotes(item.notes);
 
             return {
               ...item,
               notes: decodedNote,
               order_index: index,
               is_cost: item.is_cost ?? isCost,
+              is_personnel: item.is_personnel ?? isPersonnel,
               section_id: item.section_id || undefined
             };
           })
@@ -905,6 +919,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     | 'internal_quantity'
     | 'internal_price_per_unit'
     | 'is_cost'
+    | 'is_personnel'
     | 'section_id';
 
   const updateItem = (index: number, field: EditableField, value: string | number | boolean) => {
@@ -942,6 +957,9 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
           break;
         case 'is_cost':
           item.is_cost = Boolean(value);
+          break;
+        case 'is_personnel':
+          item.is_personnel = Boolean(value);
           break;
       }
 
@@ -1086,6 +1104,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         const itemsToInsert = items.map((item, index) => {
           const {
             is_cost,
+            is_personnel,
             notes,
             section_id: itemSectionId,
             id: _id,
@@ -1101,7 +1120,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
             ...rest,
             budget_id: currentBudgetId,
             order_index: index,
-            notes: encodeItemNotes(notes, is_cost)
+            notes: encodeItemNotes(notes, is_cost, is_personnel)
           };
 
           const normalizedSectionId =
@@ -1417,6 +1436,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
     if (includeInternal) {
       financialSummaryPairs.push(
         ['Interní náklady', formatCurrency(totals.internalTotal)],
+        ['Personální náklady', formatCurrency(totals.personnelTotal)],
         ['Zisk (Kč)', formatCurrency(totals.profit)],
         ['Marže (%)', `${marginPercentage.toFixed(1)} %`],
         ['Zisk na položku', formatCurrency(profitPerItem)]
@@ -2085,12 +2105,18 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   const totals = useMemo(
     () =>
       items.reduce(
-        (acc, item) => ({
-          clientTotal: acc.clientTotal + (item.total_price || 0),
-          internalTotal: acc.internalTotal + (item.internal_total_price || 0),
-          profit: acc.profit + (item.profit || 0)
-        }),
-        { clientTotal: 0, internalTotal: 0, profit: 0 }
+        (acc, item) => {
+          acc.clientTotal += item.total_price || 0;
+          acc.internalTotal += item.internal_total_price || 0;
+          acc.profit += item.profit || 0;
+
+          if (item.is_personnel) {
+            acc.personnelTotal += item.internal_total_price || 0;
+          }
+
+          return acc;
+        },
+        { clientTotal: 0, internalTotal: 0, profit: 0, personnelTotal: 0 }
       ),
     [items]
   );
@@ -2098,7 +2124,13 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
   const sectionSummaries = useMemo(() => {
     const map = new Map<
       string,
-      { clientTotal: number; internalTotal: number; profit: number; itemsCount: number }
+      {
+        clientTotal: number;
+        internalTotal: number;
+        profit: number;
+        personnelTotal: number;
+        itemsCount: number;
+      }
     >();
 
     items.forEach((item) => {
@@ -2108,6 +2140,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         clientTotal: 0,
         internalTotal: 0,
         profit: 0,
+        personnelTotal: 0,
         itemsCount: 0
       };
 
@@ -2115,6 +2148,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         clientTotal: existing.clientTotal + (item.total_price || 0),
         internalTotal: existing.internalTotal + (item.internal_total_price || 0),
         profit: existing.profit + (item.profit || 0),
+        personnelTotal:
+          existing.personnelTotal + (item.is_personnel ? item.internal_total_price || 0 : 0),
         itemsCount: existing.itemsCount + 1
       });
     });
@@ -2128,6 +2163,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
         clientTotal: totalsForSection?.clientTotal ?? 0,
         internalTotal: totalsForSection?.internalTotal ?? 0,
         profit: totalsForSection?.profit ?? 0,
+        personnelTotal: totalsForSection?.personnelTotal ?? 0,
         itemsCount: totalsForSection?.itemsCount ?? 0
       };
     });
@@ -2302,7 +2338,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
                   <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
                     Celkem pro klienta
@@ -2322,6 +2358,16 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                     {totals.profit.toLocaleString('cs-CZ')} Kč
                   </p>
                   <p className="text-xs text-slate-200/80">{marginPercentage.toFixed(1)} % marže</p>
+                </div>
+                <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-200">
+                    Personální náklady
+                    <Users className="h-4 w-4 text-white" />
+                  </div>
+                  <p className="mt-3 text-xl font-semibold md:text-2xl">
+                    {totals.personnelTotal.toLocaleString('cs-CZ')} Kč
+                  </p>
+                  <p className="text-xs text-slate-200/80">aktuálně označený personál</p>
                 </div>
               </div>
             </div>
@@ -2652,7 +2698,8 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                         </div>
                       ) : (
                         <div className="grid gap-4 md:grid-cols-2">
-                          {sectionSummaries.map(({ section, clientTotal, internalTotal, profit, itemsCount }) => (
+                          {sectionSummaries.map(
+                            ({ section, clientTotal, internalTotal, profit, personnelTotal, itemsCount }) => (
                             <div
                               key={section.tempId}
                               className="space-y-4 rounded-2xl border border-gray-200 bg-white/90 p-4 shadow-sm"
@@ -2685,7 +2732,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                 </button>
                               </div>
 
-                              <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Položek</p>
                                   <p className="text-lg font-semibold text-[#0a192f]">{itemsCount}</p>
@@ -2708,7 +2755,16 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                     </p>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:col-span-3 lg:col-span-1">
+                                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                  <Users className="h-5 w-5 text-sky-600" />
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Personál</p>
+                                    <p className="text-sm font-semibold text-sky-600">
+                                      {personnelTotal.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:col-span-2 lg:col-span-2 xl:col-span-1">
                                   <Target className="h-5 w-5 text-[#0a192f]" />
                                   <div>
                                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Marže</p>
@@ -2742,6 +2798,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                               <th className="px-4 py-3 text-center text-gray-500">Náklad</th>
                               <th className="px-4 py-3 text-right text-gray-500">Interní počet</th>
                               <th className="px-4 py-3 text-right text-gray-500">Interní cena</th>
+                              <th className="px-4 py-3 text-center text-gray-500">Personál</th>
                               <th className="px-4 py-3 text-right text-gray-500">Interní celkem</th>
                               <th className="px-4 py-3 text-right text-emerald-600">Marže</th>
                               <th className="px-4 py-3 text-right">Akce</th>
@@ -2750,7 +2807,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           <tbody className="divide-y divide-gray-100">
                             {items.length === 0 ? (
                               <tr>
-                                <td colSpan={15} className="px-4 py-6 text-center text-sm text-gray-500">
+                                <td colSpan={16} className="px-4 py-6 text-center text-sm text-gray-500">
                                   Přidejte první položku pomocí tlačítka „Přidat položku“.
                                 </td>
                               </tr>
@@ -2886,6 +2943,17 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                       />
                                     </td>
                                     <td className="px-4 py-3">
+                                      <div className="flex justify-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(item.is_personnel)}
+                                          onChange={(e) => updateItem(index, 'is_personnel', e.target.checked)}
+                                          className="h-4 w-4 rounded border-sky-300 text-sky-600 focus:ring-sky-500"
+                                          title="Označit jako personální náklad"
+                                        />
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
                                       <div className="text-right font-semibold text-emerald-600">
                                         {internalTotal.toLocaleString('cs-CZ')} Kč
                                       </div>
@@ -2921,7 +2989,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                               <td className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
                                 {totals.clientTotal.toLocaleString('cs-CZ')} Kč
                               </td>
-                              <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
+                              <td colSpan={4} className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
                                 Interní náklady
                               </td>
                               <td className="px-4 py-3 text-right text-sm font-semibold text-[#0a192f]">
@@ -2931,6 +2999,14 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                 {totals.profit.toLocaleString('cs-CZ')} Kč
                               </td>
                               <td className="px-4 py-3" />
+                            </tr>
+                            <tr>
+                              <td colSpan={13} className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-[#0a192f]/80">
+                                Personální náklady
+                              </td>
+                              <td colSpan={3} className="px-4 py-2 text-right text-sm font-semibold text-sky-600">
+                                {totals.personnelTotal.toLocaleString('cs-CZ')} Kč
+                              </td>
                             </tr>
                           </tfoot>
                         </table>
@@ -3117,6 +3193,19 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                     </div>
                                   </div>
 
+                                  <div className="space-y-2">
+                                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Personál</span>
+                                    <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(item.is_personnel)}
+                                        onChange={(e) => updateItem(index, 'is_personnel', e.target.checked)}
+                                        className="h-4 w-4 rounded border-sky-300 text-sky-600 focus:ring-sky-500"
+                                      />
+                                      <span>Zařadit mezi personální náklady</span>
+                                    </label>
+                                  </div>
+
                                   <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
                                       <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Interní celkem</label>
@@ -3145,7 +3234,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
 
                 {currentStep === 2 && (
                   <div className="space-y-6">
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                         <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
                           Celkem pro klienta
@@ -3165,6 +3254,16 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           {totals.internalTotal.toLocaleString('cs-CZ')} Kč
                         </p>
                         <p className="text-xs text-gray-500">včetně interních zdrojů</p>
+                      </div>
+                      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Personální náklady
+                          <Users className="h-4 w-4 text-[#0a192f]" />
+                        </div>
+                        <p className="mt-3 text-2xl font-semibold text-[#0a192f]">
+                          {totals.personnelTotal.toLocaleString('cs-CZ')} Kč
+                        </p>
+                        <p className="text-xs text-gray-500">z interních výplat</p>
                       </div>
                       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                         <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -3214,11 +3313,12 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                           </div>
 
                           <div className="mt-4 space-y-3">
-                            {sectionSummaries.map(({ section, clientTotal, internalTotal, profit, itemsCount }) => (
-                              <div
-                                key={section.tempId}
-                                className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4"
-                              >
+                            {sectionSummaries.map(
+                              ({ section, clientTotal, internalTotal, profit, personnelTotal, itemsCount }) => (
+                                <div
+                                  key={section.tempId}
+                                  className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4"
+                                >
                                 <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                                   <div>
                                     <p className="text-sm font-semibold text-[#0a192f]">
@@ -3233,7 +3333,7 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                   </span>
                                 </div>
 
-                                <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                   <div className="rounded-lg border border-gray-200 bg-white p-3">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pro klienta</p>
                                     <p className="text-sm font-semibold text-[#0a192f]">
@@ -3244,6 +3344,12 @@ export default function BudgetEditor({ budgetId, onBack, onSaved, activeOrganiza
                                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Interně</p>
                                     <p className="text-sm font-semibold text-emerald-600">
                                       {internalTotal.toLocaleString('cs-CZ')} Kč
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Personál</p>
+                                    <p className="text-sm font-semibold text-sky-600">
+                                      {personnelTotal.toLocaleString('cs-CZ')} Kč
                                     </p>
                                   </div>
                                   <div className="rounded-lg border border-gray-200 bg-white p-3">
