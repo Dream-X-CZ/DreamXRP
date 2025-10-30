@@ -5,6 +5,7 @@ import AuthForm from './components/AuthForm';
 import Layout from './components/Layout';
 import BudgetList from './components/BudgetList';
 import BudgetEditor from './components/BudgetEditor';
+import BudgetDetail from './components/BudgetDetail';
 import ExpensesList from './components/ExpensesList';
 import Analytics from './components/Analytics';
 import Employees from './components/Employees';
@@ -45,6 +46,7 @@ function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [isCreatingBudget, setIsCreatingBudget] = useState(false);
+  const [viewingBudgetId, setViewingBudgetId] = useState<string | null>(null);
   const [pendingInvitations, setPendingInvitations] = useState<InvitationWithOrganization[]>([]);
   const [processingInviteId, setProcessingInviteId] = useState<string | null>(null);
   const [memberships, setMemberships] = useState<(OrganizationMember & { organization: Organization | null })[]>([]);
@@ -91,6 +93,19 @@ function App() {
       if (budgetParam && !validBudgetId) {
         const url = new URL(window.location.href);
         url.searchParams.set('view', 'budget-editor');
+        url.searchParams.delete('budgetId');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } else if (params.get('view') === 'budget-detail') {
+      setCurrentView('budgets');
+      setIsCreatingBudget(false);
+      const budgetParam = params.get('budgetId');
+      const validBudgetId = isValidUuid(budgetParam) ? budgetParam : null;
+      setViewingBudgetId(validBudgetId);
+
+      if (budgetParam && !validBudgetId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'budget-detail');
         url.searchParams.delete('budgetId');
         window.history.replaceState({}, '', url.toString());
       }
@@ -295,6 +310,7 @@ function App() {
     setEditingBudgetId(null);
     setCurrentView('budgets');
     setIsCreatingBudget(true);
+    setViewingBudgetId(null);
 
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -308,10 +324,25 @@ function App() {
     setEditingBudgetId(budgetId);
     setCurrentView('budgets');
     setIsCreatingBudget(true);
+    setViewingBudgetId(null);
 
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('view', 'budget-editor');
+      url.searchParams.set('budgetId', budgetId);
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
+
+  const handleViewBudget = (budgetId: string) => {
+    setViewingBudgetId(budgetId);
+    setEditingBudgetId(null);
+    setCurrentView('budgets');
+    setIsCreatingBudget(false);
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', 'budget-detail');
       url.searchParams.set('budgetId', budgetId);
       window.history.replaceState({}, '', url.toString());
     }
@@ -324,6 +355,7 @@ function App() {
   const handleBackToBudgets = () => {
     setIsCreatingBudget(false);
     setEditingBudgetId(null);
+    setViewingBudgetId(null);
 
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -376,12 +408,23 @@ function App() {
         />
       )}
 
-      {currentView === 'budgets' && !isCreatingBudget && (
+      {currentView === 'budgets' && !isCreatingBudget && !viewingBudgetId && (
         <BudgetList
           key={`budget-list-${activeOrganizationId ?? 'none'}`}
           onCreateNew={handleCreateBudget}
           onEditBudget={handleEditBudget}
+          onViewBudget={handleViewBudget}
           refreshSignal={budgetListRefreshSignal}
+          activeOrganizationId={activeOrganizationId}
+        />
+      )}
+
+      {currentView === 'budgets' && viewingBudgetId && !isCreatingBudget && (
+        <BudgetDetail
+          key={`budget-detail-${viewingBudgetId}`}
+          budgetId={viewingBudgetId}
+          onBack={handleBackToBudgets}
+          onEdit={handleEditBudget}
           activeOrganizationId={activeOrganizationId}
         />
       )}

@@ -13,7 +13,8 @@ import {
   ArchiveRestore,
   Trash2,
   AlertTriangle,
-  X
+  X,
+  Pencil
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ensureUserOrganization } from '../lib/organization';
@@ -22,6 +23,7 @@ import { Budget } from '../types/database';
 interface BudgetListProps {
   onCreateNew: () => void;
   onEditBudget: (budgetId: string) => void;
+  onViewBudget: (budgetId: string) => void;
   refreshSignal?: number;
   activeOrganizationId?: string | null;
 }
@@ -33,7 +35,7 @@ interface BudgetWithStats extends Budget {
   items_count?: number;
 }
 
-export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, activeOrganizationId }: BudgetListProps) {
+export default function BudgetList({ onCreateNew, onEditBudget, onViewBudget, refreshSignal, activeOrganizationId }: BudgetListProps) {
   const [budgets, setBudgets] = useState<BudgetWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'draft' | 'sent' | 'approved' | 'rejected' | 'archived'>('all');
@@ -361,7 +363,7 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
             <div
               key={budget.id}
               className="bg-white rounded-lg shadow hover:shadow-lg transition p-6 cursor-pointer"
-              onClick={() => onEditBudget(budget.id)}
+              onClick={() => onViewBudget(budget.id)}
             >
               <div className="flex justify-between items-start mb-4 gap-4">
                 <div className="flex-1">
@@ -412,11 +414,21 @@ export default function BudgetList({ onCreateNew, onEditBudget, refreshSignal, a
                     className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onEditBudget(budget.id);
+                      onViewBudget(budget.id);
                     }}
                     title="Zobrazit detail"
                   >
                     <Eye className="w-5 h-5" />
+                  </button>
+                  <button
+                    className="text-[#0a192f] hover:bg-gray-100 p-2 rounded-lg transition"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onEditBudget(budget.id);
+                    }}
+                    title="Upravit rozpočet"
+                  >
+                    <Pencil className="w-5 h-5" />
                   </button>
                   <button
                     className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
