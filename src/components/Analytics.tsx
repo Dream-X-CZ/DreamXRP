@@ -10,6 +10,7 @@ interface Stats {
   totalRevenue: number;
   totalCosts: number;
   totalProfit: number;
+  totalPersonnelCosts: number;
   totalExpenses: number;
   budgetsByStatus: { status: string; count: number }[];
   expensesByCategory: { category: string; amount: number }[];
@@ -28,6 +29,7 @@ const INITIAL_STATS: Stats = {
   totalRevenue: 0,
   totalCosts: 0,
   totalProfit: 0,
+  totalPersonnelCosts: 0,
   totalExpenses: 0,
   budgetsByStatus: [],
   expensesByCategory: [],
@@ -104,6 +106,11 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
       const totalCosts = budgetItems?.reduce((sum, item) => sum + item.internal_total_price, 0) || 0;
       const totalProfit = totalRevenue - totalCosts;
       const totalExpenses = expenses?.reduce((sum, exp) => sum + exp.amount, 0) || 0;
+      const totalPersonnelCosts =
+        budgetItems?.reduce(
+          (sum, item) => sum + (item.is_personnel ? Number(item.internal_total_price) || 0 : 0),
+          0
+        ) || 0;
 
       const budgetsByStatus = [
         { status: 'Koncept', count: budgets?.filter((b) => b.status === 'draft').length || 0 },
@@ -182,6 +189,7 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
         totalCosts,
         totalProfit,
         totalExpenses,
+        totalPersonnelCosts,
         budgetsByStatus,
         expensesByCategory,
         internalCostsByCategory,
@@ -244,6 +252,11 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
         ? (stats.totalExpenses / stats.totalRevenue) * 100
         : 0;
 
+    const personnelCostShare =
+      stats.totalCosts > 0
+        ? (stats.totalPersonnelCosts / stats.totalCosts) * 100
+        : 0;
+
     return {
       averageMonthlyRevenue,
       averageMonthlyProfit,
@@ -251,6 +264,7 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
       revenueTrend,
       profitMargin,
       expenseRatio,
+      personnelCostShare,
     };
   }, [stats]);
 
@@ -527,7 +541,7 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
     <div>
       <h2 className="text-2xl font-bold text-[#0a192f] mb-6">Analytika</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-600">Celkem rozpočtů</div>
@@ -563,6 +577,16 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
           </div>
           <div className="text-3xl font-bold text-green-600">
             {formatCurrency(stats.totalProfit)}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm text-gray-600">Personální náklady</div>
+            <Users className="w-5 h-5 text-purple-500" />
+          </div>
+          <div className="text-3xl font-bold text-[#0a192f]">
+            {formatCurrency(stats.totalPersonnelCosts)}
           </div>
         </div>
       </div>
@@ -604,6 +628,12 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
               <div className="text-gray-600">Podíl nákladů na tržbách</div>
               <div className="text-xl font-semibold text-[#0a192f]">
                 {formatPercentage(businessHealth.expenseRatio)}
+              </div>
+            </div>
+            <div>
+              <div className="text-gray-600">Podíl personálních nákladů</div>
+              <div className="text-xl font-semibold text-[#0a192f]">
+                {formatPercentage(businessHealth.personnelCostShare)}
               </div>
             </div>
           </div>
@@ -681,6 +711,12 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
               <span className={revenueTrendClass}>
                 {revenueTrendPrefix}
                 {formatPercentage(businessHealth.revenueTrend)}
+              </span>
+            </li>
+            <li className="flex items-center justify-between">
+              <span className="font-semibold text-[#0a192f]">Personální náklady</span>
+              <span className="text-[#0a192f]">
+                {formatPercentage(businessHealth.personnelCostShare)}
               </span>
             </li>
             <li>
