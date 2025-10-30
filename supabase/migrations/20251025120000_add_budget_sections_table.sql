@@ -67,6 +67,19 @@ CREATE INDEX IF NOT EXISTS idx_budget_sections_budget_id ON budget_sections(budg
 ALTER TABLE budget_items
   ADD COLUMN IF NOT EXISTS section_id uuid;
 
-ALTER TABLE budget_items
-  ADD CONSTRAINT IF NOT EXISTS budget_items_section_id_fkey
-  FOREIGN KEY (section_id) REFERENCES budget_sections(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'budget_items_section_id_fkey'
+      AND conrelid = 'budget_items'::regclass
+  ) THEN
+    ALTER TABLE budget_items
+      ADD CONSTRAINT budget_items_section_id_fkey
+      FOREIGN KEY (section_id)
+      REFERENCES budget_sections(id)
+      ON DELETE SET NULL;
+  END IF;
+END;
+$$;
