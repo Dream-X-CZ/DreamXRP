@@ -37,6 +37,24 @@ const INITIAL_STATS: Stats = {
   monthlyData: [],
 };
 
+const NOTES_METADATA_PREFIX = '__budget_meta__:';
+
+const parseBudgetItemMetadata = (
+  rawNotes: string | null | undefined
+): { isPersonnel: boolean } => {
+  if (!rawNotes || !rawNotes.startsWith(NOTES_METADATA_PREFIX)) {
+    return { isPersonnel: false };
+  }
+
+  try {
+    const parsed = JSON.parse(rawNotes.slice(NOTES_METADATA_PREFIX.length));
+    return { isPersonnel: Boolean(parsed?.isPersonnel) };
+  } catch (error) {
+    console.warn('Failed to parse budget item metadata in analytics view.', error);
+    return { isPersonnel: false };
+  }
+};
+
 interface AnalyticsProps {
   activeOrganizationId: string | null;
 }
@@ -107,10 +125,16 @@ export default function Analytics({ activeOrganizationId }: AnalyticsProps) {
       const totalProfit = totalRevenue - totalCosts;
       const totalExpenses = expenses?.reduce((sum, exp) => sum + exp.amount, 0) || 0;
       const totalPersonnelCosts =
-        budgetItems?.reduce(
-          (sum, item) => sum + (item.is_personnel ? Number(item.internal_total_price) || 0 : 0),
-          0
-        ) || 0;
+        budgetItems?.reduce((sum, item) => {
+          const { isPersonnel } = parseBudgetItemMetadata(item.notes);
+          const hasPersonnelFlag = item.is_personnel ?? isPersonnel;
+          if (!hasPersonnelFlag) {
+            return sum;
+          }
+
+          const internalTotal = Number(item.internal_total_price) || 0;
+          return sum + internalTotal;
+        }, 0) || 0;
 
       const budgetsByStatus = [
         { status: 'Koncept', count: budgets?.filter((b) => b.status === 'draft').length || 0 },
